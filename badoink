@@ -142,7 +142,7 @@ end)
 -- WINDOW
 -- ============================================================
 local Window = Library:CreateWindow({
-    Title = 'cumyin.xyz 1.05A',
+    Title = 'cumyin.xyz 1.14A',
     Center = true,
     AutoShow = true,
     TabPadding = 8,
@@ -341,8 +341,8 @@ SpeedGroup:AddSlider('SpeedValue', {
 
 ModDetGroup:AddToggle('ModDetEnabled', {
     Text = 'Enable Mod Detection',
-    Default = false,
-    Tooltip = 'Kicks known mod userids from your server',
+    Default = true,
+    Tooltip = 'kicks u when mod is detected',
 })
 SoundGroup:AddToggle('HitSoundEnabled', { Text = 'Enable Hit Sound', Default = false })
 SoundGroup:AddInput('HitSoundID', { Text = 'Hit Sound ID', Default = '78469882347907', Placeholder = 'rbxassetid://...' })

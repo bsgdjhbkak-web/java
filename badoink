@@ -57,6 +57,10 @@ local notifCooldowns = {}  -- throttle repeated proximity warnings
 -- ============================================================
 local flying = false
 local flyBodyVelocity = nil
+-- Speed hack state
+local speedBV = nil          -- BodyVelocity used for speed (destroyed on disable/respawn)
+local speedLV = nil          -- LinearVelocity used for speed (R15 modern)
+local speedAttachment = nil  -- Attachment for LinearVelocity
 local flyBodyGyro = nil
 local flyGoingUp = false
 local flyGoingDown = false
@@ -138,7 +142,7 @@ end)
 -- WINDOW
 -- ============================================================
 local Window = Library:CreateWindow({
-    Title = 'cumyin.xyz 1.11A',
+    Title = 'cumyin.xyz 1.05A',
     Center = true,
     AutoShow = true,
     TabPadding = 8,
@@ -298,6 +302,7 @@ ESPArrowGroup:AddToggle('ProxSoundEnabled', { Text = 'Enable Proximity Sound', D
 ESPArrowGroup:AddInput('ProxSoundID', { Text = 'Sound ID', Default = '9120385810', Placeholder = 'rbxassetid://...' })
 ESPArrowGroup:AddSlider('ProxSoundPitch', { Text = 'Sound Pitch', Default = 1, Min = 0.1, Max = 3, Rounding = 1 })
 
+
 -- ============================================================
 -- MISC TAB
 -- ============================================================
@@ -320,6 +325,25 @@ FlyGroup:AddToggle('FlyEnabled', { Text = 'Enable Fly', Default = false })
 FlyGroup:AddSlider('FlySpeed', { Text = 'Fly Speed', Default = 50, Min = 1, Max = 200, Rounding = 0 })
 
 local SoundGroup = Tabs.Misc:AddLeftGroupbox('Hit & Kill Sounds')
+local SpeedGroup  = Tabs.Misc:AddLeftGroupbox('Walk Speed')
+local ModDetGroup = Tabs.Misc:AddRightGroupbox('Mod Detection')
+SpeedGroup:AddToggle('SpeedEnabled', {
+    Text = 'Enable Speed',
+    Default = false,
+})
+SpeedGroup:AddSlider('SpeedValue', {
+    Text = 'Speed (studs/s)',
+    Default = 32,
+    Min = 1,
+    Max = 250,
+    Rounding = 0,
+})
+
+ModDetGroup:AddToggle('ModDetEnabled', {
+    Text = 'Enable Mod Detection',
+    Default = false,
+    Tooltip = 'Kicks known mod userids from your server',
+})
 SoundGroup:AddToggle('HitSoundEnabled', { Text = 'Enable Hit Sound', Default = false })
 SoundGroup:AddInput('HitSoundID', { Text = 'Hit Sound ID', Default = '78469882347907', Placeholder = 'rbxassetid://...' })
 SoundGroup:AddSlider('HitSoundPitch', { Text = 'Hit Pitch', Default = 1, Min = 0.1, Max = 3, Rounding = 1 })
@@ -990,6 +1014,12 @@ local function activateFly()
     end
 end
 
+local function cleanupSpeed()
+    if speedLV then pcall(function() speedLV:Destroy() end); speedLV = nil end
+    if speedAttachment then pcall(function() speedAttachment:Destroy() end); speedAttachment = nil end
+    if speedBV then pcall(function() speedBV:Destroy() end); speedBV = nil end
+end
+
 local function deactivateFly()
     -- Remove BodyMovers, let gravity take over
     flying = false
@@ -1001,6 +1031,12 @@ local function deactivateFly()
 end
 
 -- When toggle is DISABLED, always stop flying
+Toggles.SpeedEnabled:OnChanged(function()
+    if not Toggles.SpeedEnabled.Value then
+        cleanupSpeed()
+    end
+end)
+
 Toggles.FlyEnabled:OnChanged(function()
     if not Toggles.FlyEnabled.Value then
         flySpaceHoldStart = nil
@@ -1032,6 +1068,7 @@ LocalPlayer.CharacterAdded:Connect(function()
     -- Do NOT nil hooked_newbullet — it's still referenced by the old module's
     -- closure and helps identify it. The new module won't have HOOK_TAG.
     bullet_module = nil; original_newbullet = nil
+    cleanupSpeed()
     -- hooked_newbullet intentionally NOT cleared — old module still uses it
     locked_player = nil
 
@@ -1439,6 +1476,67 @@ RunService.RenderStepped:Connect(function(dt)
                 flyBodyVelocity.Velocity = moveVector.Unit * flySpeed
             else
                 flyBodyVelocity.Velocity = Vector3.zero
+            end
+        end
+    end
+
+    -- ======================================================
+    -- SPEED HACK (velocity-based, never sets WalkSpeed)
+    -- ======================================================
+    do
+        local speedOn = Toggles.SpeedEnabled and Toggles.SpeedEnabled.Value
+        local speedChar = LocalPlayer.Character
+        local speedHum  = speedChar and speedChar:FindFirstChild("Humanoid")
+        local speedRoot = speedChar and speedChar:FindFirstChild("HumanoidRootPart")
+
+        if not speedOn or not speedHum or not speedRoot or flying then
+            -- disabled or flying — destroy movers if they exist
+            if speedBV or speedLV then cleanupSpeed() end
+        else
+            local moveDir = speedHum.MoveDirection  -- unit vector set by engine from WASD/joystick
+            local spd = Options.SpeedValue and Options.SpeedValue.Value or 32
+
+            -- Prefer LinearVelocity (R15, undetected by typical WalkSpeed checks)
+            -- Fall back to BodyVelocity (R6 / older games)
+            local useLinear = pcall(function() return Instance.new("LinearVelocity") end)
+
+            if useLinear then
+                -- LinearVelocity with Plane mode — only controls XZ, Y is completely free
+                if not speedLV or not speedLV.Parent then
+                    cleanupSpeed()
+                    speedAttachment = Instance.new("Attachment")
+                    speedAttachment.Position = Vector3.zero
+                    speedAttachment.Parent = speedRoot
+                    speedLV = Instance.new("LinearVelocity")
+                    speedLV.Attachment0 = speedAttachment
+                    speedLV.VelocityConstraintMode = Enum.VelocityConstraintMode.Plane
+                    speedLV.MaxForce = math.huge
+                    speedLV.RelativeTo = Enum.ActuatorRelativeTo.World
+                    speedLV.PlaneVelocity = Vector2.new(0, 0)
+                    speedLV.PrimaryTangentAxis = Vector3.new(1, 0, 0)
+                    speedLV.SecondaryTangentAxis = Vector3.new(0, 0, 1)
+                    speedLV.Parent = speedRoot
+                end
+                -- Plane mode: X = world X axis velocity, Y = world Z axis velocity
+                if moveDir.Magnitude > 0.1 then
+                    speedLV.PlaneVelocity = Vector2.new(moveDir.X * spd, moveDir.Z * spd)
+                else
+                    speedLV.PlaneVelocity = Vector2.new(0, 0)
+                end
+            else
+                -- BodyVelocity fallback — MaxForce Y=0 so gravity/jump are untouched
+                if not speedBV or not speedBV.Parent then
+                    cleanupSpeed()
+                    speedBV = Instance.new("BodyVelocity")
+                    speedBV.MaxForce = Vector3.new(1e5, 0, 1e5)
+                    speedBV.P = 1e4
+                    speedBV.Parent = speedRoot
+                end
+                if moveDir.Magnitude > 0.1 then
+                    speedBV.Velocity = Vector3.new(moveDir.X * spd, 0, moveDir.Z * spd)
+                else
+                    speedBV.Velocity = Vector3.zero
+                end
             end
         end
     end
@@ -1917,6 +2015,9 @@ MenuGroup:AddButton('Unload', function()
     -- Clear locked target
     locked_player = nil
 
+    -- Speed hack cleanup
+    pcall(cleanupSpeed)
+
     Library:Unload()
 end)
 MenuGroup:AddLabel('Menu bind'):AddKeyPicker('MenuKeybind', { Default = 'End', NoUI = true, Text = 'Menu keybind' })
@@ -1934,5 +2035,31 @@ SaveManager:LoadAutoloadConfig()
 
 Library:SetWatermarkVisibility(true)
 Library:SetWatermark('cumyin.xyz | No Target')
+
+
+-- ============================================================
+-- MOD DETECTION
+-- ============================================================
+local MOD_IDS = { [708796191]=true, [1522254052]=true, [48332771]=true, [38491541]=true }
+
+local function checkModPlayer(player)
+    if not (Toggles.ModDetEnabled and Toggles.ModDetEnabled.Value) then return end
+    if MOD_IDS[player.UserId] then
+        pushNotification("md: " .. player.Name)
+        game.Players.LocalPlayer:Kick("mod detected")
+    end
+end
+
+-- check players already in server
+for _, p in pairs(Players:GetPlayers()) do
+    if p ~= LocalPlayer then
+        task.spawn(checkModPlayer, p)
+    end
+end
+
+-- check players joining
+Players.PlayerAdded:Connect(function(p)
+    task.spawn(checkModPlayer, p)
+end)
 
 print("cy ok")

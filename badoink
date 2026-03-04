@@ -138,7 +138,7 @@ end)
 -- WINDOW
 -- ============================================================
 local Window = Library:CreateWindow({
-    Title = 'cumyin.xyz 1.05A',
+    Title = 'cumyin.xyz 1.11A',
     Center = true,
     AutoShow = true,
     TabPadding = 8,

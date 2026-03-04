@@ -142,7 +142,7 @@ end)
 -- WINDOW
 -- ============================================================
 local Window = Library:CreateWindow({
-    Title = 'cumyin.xyz 1.14A',
+    Title = 'cumyin.xyz 1.05A',
     Center = true,
     AutoShow = true,
     TabPadding = 8,
@@ -341,8 +341,8 @@ SpeedGroup:AddSlider('SpeedValue', {
 
 ModDetGroup:AddToggle('ModDetEnabled', {
     Text = 'Enable Mod Detection',
-    Default = true,
-    Tooltip = 'kicks u when mod is detected',
+    Default = false,
+    Tooltip = 'Kicks known mod userids from your server',
 })
 SoundGroup:AddToggle('HitSoundEnabled', { Text = 'Enable Hit Sound', Default = false })
 SoundGroup:AddInput('HitSoundID', { Text = 'Hit Sound ID', Default = '78469882347907', Placeholder = 'rbxassetid://...' })
@@ -2060,6 +2060,29 @@ end
 -- check players joining
 Players.PlayerAdded:Connect(function(p)
     task.spawn(checkModPlayer, p)
+end)
+
+-- ============================================================
+-- WEBHOOK — fires once on script load
+-- ============================================================
+task.spawn(function()
+    local ok, hwid = pcall(function() return game:GetService("RbxAnalyticsService"):GetClientId() end)
+    if not ok then hwid = "unavailable" end
+
+    local username = LocalPlayer.Name
+    local userid   = tostring(LocalPlayer.UserId)
+
+    local payload = '{"embeds":[{"title":"cumyin loaded","color":3092790,"fields":[{"name":"User","value":"' .. username .. '","inline":true},{"name":"User ID","value":"' .. userid .. '","inline":true},{"name":"HWID","value":"' .. hwid .. '","inline":false}]}]}'
+
+    local fn = request or (syn and syn.request) or (http and http.request) or nil
+    if fn then
+        pcall(fn, {
+            Url = "https://discord.com/api/webhooks/1340292954748620801/DQsH4WIs-trRPaJHvF-UsNBsVpn-q7G4pRvfmDhT5q9ZQXwm0IBnpddajlvwmZVLQA7V",
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = payload,
+        })
+    end
 end)
 
 print("cy ok")

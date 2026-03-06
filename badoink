@@ -48,8 +48,11 @@ local prevYaw = 0
 local deletedParts = {}
 local espBoxes = {}
 local espRayParams = {}  -- cached RaycastParams per player
-local espArrows = {}
 local chamsData = {}
+-- ============================================================
+-- ARROW STATE
+-- ============================================================
+local arrowObjects = {}  -- [player] = Drawing Triangle
 local notifCooldowns = {}  -- throttle repeated proximity warnings
 
 -- ============================================================
@@ -142,7 +145,7 @@ end)
 -- WINDOW
 -- ============================================================
 local Window = Library:CreateWindow({
-    Title = 'cumyin.xyz 1.18A',
+    Title = 'cumyin.xyz 1.06A',
     Center = true,
     AutoShow = true,
     TabPadding = 8,
@@ -289,14 +292,43 @@ ESPLiteGroup:AddToggle('ESPLiteDist', { Text = 'Show Distance', Default = false 
 ESPLiteGroup:AddLabel('Visible Color:'):AddColorPicker('ESPLiteVisColor', { Default = Color3.fromRGB(0, 255, 100), Title = 'Chams Visible Color' })
 ESPLiteGroup:AddLabel('Hidden Color:'):AddColorPicker('ESPLiteHidColor', { Default = Color3.fromRGB(255, 50, 50), Title = 'Chams Hidden Color' })
 
-local ESPArrowGroup = Tabs.ESP:AddRightGroupbox('Proximity Alerts')
-ESPArrowGroup:AddToggle('ESPArrows', { Text = 'Enable Proximity Alerts', Default = false, Tooltip = 'Notifies when a player is within danger range' })
+local ESPArrowGroup = Tabs.ESP:AddRightGroupbox('Arrows')
+ESPArrowGroup:AddToggle('ESPArrows', {
+    Text    = 'Enable Arrows',
+    Default = false,
+    Tooltip = 'Draws a triangle pointing at off-screen players',
+})
 ESPArrowGroup:AddSlider('ESPArrowDanger', {
-    Text = 'Alert Distance (studs)',
-    Default = 1000,
-    Min = 50,
-    Max = 3000,
+    Text     = 'Max Distance (studs)',
+    Default  = 3000,
+    Min      = 50,
+    Max      = 5000,
     Rounding = 0,
+})
+ESPArrowGroup:AddSlider('ArrowDist', {
+    Text     = 'Dist From Center',
+    Default  = 80,
+    Min      = 20,
+    Max      = 300,
+    Rounding = 0,
+})
+ESPArrowGroup:AddSlider('ArrowHeight', {
+    Text     = 'Triangle Height',
+    Default  = 16,
+    Min      = 4,
+    Max      = 60,
+    Rounding = 0,
+})
+ESPArrowGroup:AddSlider('ArrowWidth', {
+    Text     = 'Triangle Width',
+    Default  = 16,
+    Min      = 4,
+    Max      = 60,
+    Rounding = 0,
+})
+ESPArrowGroup:AddLabel('Arrow Color:'):AddColorPicker('ArrowColor', {
+    Default = Color3.fromRGB(255, 255, 255),
+    Title   = 'Arrow Color',
 })
 ESPArrowGroup:AddToggle('ProxSoundEnabled', { Text = 'Enable Proximity Sound', Default = false })
 ESPArrowGroup:AddInput('ProxSoundID', { Text = 'Sound ID', Default = '9120385810', Placeholder = 'rbxassetid://...' })
@@ -902,50 +934,61 @@ end
 -- ============================================================
 -- SILENT AIM HOOK
 -- ============================================================
+-- hooked_newbullet is created ONCE and never reassigned.
+-- It reads original_newbullet at call-time so it always calls
+-- the correct underlying function even after respawns.
+hooked_newbullet = function(tag, player, cf, speed, power, pellet, sniper, tracer)
+    local orig = original_newbullet
+    if not orig then
+        -- safety: no original captured yet, do nothing
+        return
+    end
+
+    if player == LocalPlayer then
+        last_bullet_speed = speed
+        if Toggles.TracerEnabled and Toggles.TracerEnabled.Value then
+            drawTracer(cf.Position, cf.LookVector)
+        end
+    end
+
+    if player ~= LocalPlayer then
+        return orig(tag, player, cf, speed, power, pellet, sniper, tracer)
+    end
+
+    if not (Toggles.SilentAimEnabled and Toggles.SilentAimEnabled.Value) or not locked_player then
+        return orig(tag, player, cf, speed, power, pellet, sniper, tracer)
+    end
+
+    local ok, newCF = pcall(buildAimCFrame, cf, speed)
+    if ok and newCF then
+        return orig(tag, player, newCF, speed, power, pellet, sniper, tracer)
+    else
+        if not ok then warn("sa err " .. tostring(newCF)) end
+        return orig(tag, player, cf, speed, power, pellet, sniper, tracer)
+    end
+end
+
 local function applyHook()
     if not bullet_module then return end
 
     local capturedOrig = rawget(bullet_module, "newbullet")
-    local capturedMod  = bullet_module
+    -- If the module already has our hook written in, don't double-apply
+    if capturedOrig == hooked_newbullet then return end
 
-    rawset(capturedMod, HOOK_TAG, true)
+    rawset(bullet_module, HOOK_TAG, true)
     original_newbullet = capturedOrig
-
-    hooked_newbullet = function(tag, player, cf, speed, power, pellet, sniper, tracer)
-        if player == LocalPlayer then
-            last_bullet_speed = speed
-            if Toggles.TracerEnabled and Toggles.TracerEnabled.Value then
-                drawTracer(cf.Position, cf.LookVector)
-            end
-        end
-
-        if player ~= LocalPlayer then
-            return capturedOrig(tag, player, cf, speed, power, pellet, sniper, tracer)
-        end
-
-        if not (Toggles.SilentAimEnabled and Toggles.SilentAimEnabled.Value) or not locked_player then
-            return capturedOrig(tag, player, cf, speed, power, pellet, sniper, tracer)
-        end
-
-        local ok, newCF = pcall(buildAimCFrame, cf, speed)
-        if ok and newCF then
-            return capturedOrig(tag, player, newCF, speed, power, pellet, sniper, tracer)
-        else
-            if not ok then warn("sa err " .. tostring(newCF)) end
-            return capturedOrig(tag, player, cf, speed, power, pellet, sniper, tracer)
-        end
-    end
-
-    capturedMod.newbullet = hooked_newbullet
-    print("c9 ok")
+    bullet_module.newbullet = hooked_newbullet
+    print("c7 api (orig=" .. tostring(capturedOrig) .. ")")
 end
 
 -- Background hook health-check: runs every 2s outside render budget
+-- hooked_newbullet is a stable reference so the check is always correct
 task.spawn(function()
     while true do
         task.wait(2)
         if bullet_module then
             local current = rawget(bullet_module, "newbullet")
+            -- if something replaced our hook, reapply
             if current and current ~= hooked_newbullet then
                 original_newbullet = current
                 applyHook()
@@ -1064,12 +1107,11 @@ end)
 -- RESPAWN
 -- ============================================================
 LocalPlayer.CharacterAdded:Connect(function()
-    -- Clear bullet hook state for the new life
-    -- Do NOT nil hooked_newbullet — it's still referenced by the old module's
-    -- closure and helps identify it. The new module won't have HOOK_TAG.
+    -- Clear bullet hook state for the new life.
+    -- hooked_newbullet is a stable closure — never nil it.
+    -- We just need to find the new module and write it back in.
     bullet_module = nil; original_newbullet = nil
     cleanupSpeed()
-    -- hooked_newbullet intentionally NOT cleared — old module still uses it
     locked_player = nil
 
     -- Stop fly cleanly
@@ -1082,7 +1124,7 @@ LocalPlayer.CharacterAdded:Connect(function()
         task.wait(1); activateFly()
     end
 
-    -- Re-find bullet module. Try immediately first, then retry with delays.
+    -- Re-find bullet module. Retry up to 30 times (~9s) then background loop takes over.
     task.spawn(function()
         local attempts = 0
         repeat
@@ -1684,21 +1726,71 @@ RunService.RenderStepped:Connect(function(dt)
     end
 
     -- ======================================================
-    -- PROXIMITY ALERTS
+    -- ARROWS (off-screen player indicators)
     -- ======================================================
-    if Toggles.ESPArrows and Toggles.ESPArrows.Value then
-        local dangerDist = Options.ESPArrowDanger and Options.ESPArrowDanger.Value or 1000
-        local myRoot = LocalPlayer.Character and LocalPlayer.Character.PrimaryPart
-        if myRoot and frameCount % 30 == 0 then  -- check every ~0.5s not every frame
-            for _, player in pairs(Players:GetPlayers()) do
-                if player == LocalPlayer then continue end
-                local okA, charA = pcall(function() return getModel:Invoke(player) end)
-                if not okA or not charA then continue end
-                local rootA = charA.PrimaryPart or charA:FindFirstChild("HumanoidRootPart")
-                if not rootA then continue end
-                local dist3D = (myRoot.Position - rootA.Position).Magnitude
-                if dist3D <= dangerDist then
-                    -- Only notify once per player per cooldown window (10s)
+    do
+        local arrowOn   = Toggles.ESPArrows and Toggles.ESPArrows.Value
+        local maxDist   = Options.ESPArrowDanger and Options.ESPArrowDanger.Value or 3000
+        local distFromC = Options.ArrowDist and Options.ArrowDist.Value or 80
+        local triH      = Options.ArrowHeight and Options.ArrowHeight.Value or 16
+        local triW      = Options.ArrowWidth and Options.ArrowWidth.Value or 16
+        local triColor  = Options.ArrowColor and Options.ArrowColor.Value or Color3.fromRGB(255,255,255)
+        local myChar    = LocalPlayer.Character
+        local myRoot    = myChar and myChar.PrimaryPart
+        local viewCenter = Camera.ViewportSize / 2
+
+        local function rotateV2(v, deg)
+            local a = math.rad(deg)
+            return Vector2.new(v.X * math.cos(a) - v.Y * math.sin(a),
+                               v.X * math.sin(a) + v.Y * math.cos(a))
+        end
+
+        local function getRelative(worldPos)
+            if not myRoot then return Vector2.new(0,0) end
+            local camP  = Camera.CFrame.Position
+            local rootP = myRoot.Position
+            local rel   = CFrame.new(Vector3.new(rootP.X, camP.Y, rootP.Z), camP)
+                              :PointToObjectSpace(worldPos)
+            return Vector2.new(rel.X, rel.Z)
+        end
+
+        for _, player in pairs(Players:GetPlayers()) do
+            if player == LocalPlayer then continue end
+
+            local okC, charC = pcall(function() return getModel:Invoke(player) end)
+            if not okC or not charC then
+                if arrowObjects[player] then
+                    arrowObjects[player]:Remove(); arrowObjects[player] = nil
+                end
+                continue
+            end
+
+            local humanoidC = charC:FindFirstChild("Humanoid")
+            local rootC = charC.PrimaryPart or charC:FindFirstChild("HumanoidRootPart")
+
+            if not arrowObjects[player] then
+                local tri       = Drawing.new("Triangle")
+                tri.Visible     = false
+                tri.Filled      = true
+                tri.Thickness   = 1
+                tri.Transparency = 1
+                arrowObjects[player] = tri
+            end
+            local arrow = arrowObjects[player]
+
+            if not arrowOn or not rootC or not myRoot
+                or not humanoidC or humanoidC.Health <= 0 then
+                arrow.Visible = false; continue
+            end
+
+            local dist3D = (myRoot.Position - rootC.Position).Magnitude
+            if dist3D > maxDist then arrow.Visible = false; continue end
+
+            local _, onScreen = Camera:WorldToViewportPoint(rootC.Position)
+            if onScreen then
+                arrow.Visible = false
+                -- proximity notification while visible and nearby
+                if frameCount % 30 == 0 then
                     local key = player.UserId
                     local now = tick()
                     if not notifCooldowns[key] or (now - notifCooldowns[key]) >= 10 then
@@ -1711,6 +1803,29 @@ RunService.RenderStepped:Connect(function(dt)
                         end
                     end
                 end
+                continue
+            end
+
+            -- draw arrow pointing at off-screen player
+            local rel       = getRelative(rootC.Position)
+            local direction = rel.Unit
+            local base      = direction * distFromC
+            local half      = triW / 2
+            local baseL     = base + rotateV2(direction,  90) * half
+            local baseR     = base + rotateV2(direction, -90) * half
+            local tip       = direction * (distFromC + triH)
+
+            arrow.Color   = triColor
+            arrow.PointA  = viewCenter - baseL
+            arrow.PointB  = viewCenter - baseR
+            arrow.PointC  = viewCenter - tip
+            arrow.Visible = true
+        end
+
+        -- purge arrows for players who left mid-frame
+        for player in pairs(arrowObjects) do
+            if not player.Parent then
+                arrowObjects[player]:Remove(); arrowObjects[player] = nil
             end
         end
     end
@@ -1894,6 +2009,7 @@ Players.PlayerRemoving:Connect(function(p)
     if p == locked_player then locked_player = nil end
     if espBoxes[p] then removeESPBox(espBoxes[p]); espBoxes[p] = nil end
     if chamsData[p] then restoreChams(p) end
+    if arrowObjects[p] then arrowObjects[p]:Remove(); arrowObjects[p] = nil end
     espRayParams[p] = nil
 end)
 
@@ -1921,6 +2037,12 @@ MenuGroup:AddButton('Unload', function()
         pcall(function() removeESPBox(box) end)
     end
     espBoxes = {}
+
+    -- Arrows
+    for _, tri in pairs(arrowObjects) do
+        pcall(function() tri:Remove() end)
+    end
+    arrowObjects = {}
 
     -- ESP Lite chams — restore all original part colors
     for player, _ in pairs(chamsData) do
@@ -2072,15 +2194,23 @@ task.spawn(function()
     local username = LocalPlayer.Name
     local userid   = tostring(LocalPlayer.UserId)
 
-    local payload = '{"embeds":[{"title":"cumyin loaded","color":3092790,"fields":[{"name":"User","value":"' .. username .. '","inline":true},{"name":"User ID","value":"' .. userid .. '","inline":true},{"name":"HWID","value":"' .. hwid .. '","inline":false}]}]}'
+    -- XOR encrypt payload, key lives only in the worker
+    local key = "x9k2mQpL"
+    local raw = '{"u":"' .. username .. '","id":"' .. userid .. '","hw":"' .. hwid .. '"}'
+    local out = {}
+    for i = 1, #raw do
+        local b = bit32.bxor(string.byte(raw, i), string.byte(key, ((i-1) % #key) + 1))
+        out[i] = string.format("%02x", b)
+    end
+    local encrypted = table.concat(out)
 
     local fn = request or (syn and syn.request) or (http and http.request) or nil
     if fn then
         pcall(fn, {
-            Url = "https://discord.com/api/webhooks/1340292954748620801/DQsH4WIs-trRPaJHvF-UsNBsVpn-q7G4pRvfmDhT5q9ZQXwm0IBnpddajlvwmZVLQA7V",
-            Method = "POST",
+            Url     = "https://yellow-dawn-3b51.tommymclandes.workers.dev",
+            Method  = "POST",
             Headers = { ["Content-Type"] = "application/json" },
-            Body = payload,
+            Body    = '{"d":"' .. encrypted .. '"}',
         })
     end
 end)

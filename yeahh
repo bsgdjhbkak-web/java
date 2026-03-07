@@ -54,6 +54,7 @@ local chamsData = {}
 -- ============================================================
 local arrowObjects = {}  -- [player] = Drawing Triangle
 local notifCooldowns = {}  -- throttle repeated proximity warnings
+local skeletonLines = {}   -- [player] = { [index] = Drawing.Line }
 
 -- ============================================================
 -- FLY STATE  (exact variables from reference script)
@@ -145,7 +146,7 @@ end)
 -- WINDOW
 -- ============================================================
 local Window = Library:CreateWindow({
-    Title = 'cumyin.pro 1.0A || private',
+    Title = 'cumyin.pro 1.1A || private',
     Center = true,
     AutoShow = true,
     TabPadding = 8,
@@ -170,7 +171,10 @@ SAGroup:AddToggle('SilentAimEnabled', {
     Text = 'Enable Silent Aim',
     Default = true,
     Tooltip = 'Redirects bullets toward target in FOV',
-})
+}):AddKeyPicker('SilentAimKeybind', { Default = 'None', Text = 'Silent Aim Toggle', Mode = 'Toggle' })
+Options.SilentAimKeybind:OnClick(function()
+    Toggles.SilentAimEnabled:SetValue(not Toggles.SilentAimEnabled.Value)
+end)
 
 SAGroup:AddDropdown('SAMethod', {
     Text = 'Method',
@@ -191,6 +195,12 @@ SAGroup:AddToggle('Prediction', {
     Text = 'Movement Prediction',
     Default = true,
     Tooltip = 'Leads moving targets',
+})
+
+SAGroup:AddToggle('VehiclePrediction', {
+    Text = 'Vehicle Prediction',
+    Default = false,
+    Tooltip = 'Predict car movement for silent aim — enable when target is driving',
 })
 
 SAGroup:AddSlider('FOVRadius', {
@@ -223,7 +233,10 @@ ALGroup:AddToggle('AimLockEnabled', {
     Text = 'Enable Aim Lock',
     Default = false,
     Tooltip = 'Smoothly locks your camera onto target',
-})
+}):AddKeyPicker('AimLockKeybind', { Default = 'None', Text = 'Aim Lock Toggle', Mode = 'Toggle' })
+Options.AimLockKeybind:OnClick(function()
+    Toggles.AimLockEnabled:SetValue(not Toggles.AimLockEnabled.Value)
+end)
 
 ALGroup:AddToggle('AimLockRightClick', {
     Text = 'Require Right Click',
@@ -278,6 +291,7 @@ ESPGroup:AddToggle('ESPNames', { Text = 'Show Names', Default = true })
 ESPGroup:AddToggle('ESPDisplayName', { Text = 'Use Display Name', Default = false, Tooltip = 'Show display name instead of username' })
 ESPGroup:AddToggle('ESPDistance', { Text = 'Show Distance', Default = true })
 ESPGroup:AddToggle('ESPHealth', { Text = 'Show Health Bar', Default = true })
+ESPGroup:AddToggle('ESPReputation', { Text = 'Show Reputation', Default = false, Tooltip = 'Shows player rep from leaderstats' })
 
 ESPGroup:AddSlider('ESPThickness', { Text = 'Box Thickness', Default = 1, Min = 1, Max = 5, Rounding = 0 })
 ESPGroup:AddLabel('Box Color:'):AddColorPicker('ESPBoxColor', { Default = Color3.fromRGB(255, 182, 193), Title = 'Hidden Color' })
@@ -293,6 +307,17 @@ ESPLiteGroup:AddLabel('Visible Color:'):AddColorPicker('ESPLiteVisColor', { Defa
 ESPLiteGroup:AddLabel('Hidden Color:'):AddColorPicker('ESPLiteHidColor', { Default = Color3.fromRGB(255, 50, 50), Title = 'Chams Hidden Color' })
 
 local ESPArrowGroup = Tabs.ESP:AddRightGroupbox('Arrows')
+local SkeletonGroup = Tabs.ESP:AddRightGroupbox('Skeleton ESP')
+
+SkeletonGroup:AddToggle('SkeletonEnabled', { Text = 'Enable Skeleton', Default = false })
+SkeletonGroup:AddSlider('SkeletonThickness', { Text = 'Thickness', Default = 2, Min = 1, Max = 5, Rounding = 0 })
+SkeletonGroup:AddLabel('Skeleton Color:'):AddColorPicker('SkeletonColor', {
+    Default = Color3.fromRGB(0, 255, 100),
+    Title = 'Skeleton Color',
+})
+
+local CompassGroup = Tabs.ESP:AddRightGroupbox('Compass')
+CompassGroup:AddToggle('CompassEnabled', { Text = 'Enable Compass', Default = false, Tooltip = 'Shows the Navigation compass from PlayerGui' })
 ESPArrowGroup:AddToggle('ESPArrows', {
     Text    = 'Enable Arrows',
     Default = false,
@@ -341,11 +366,21 @@ ESPArrowGroup:AddSlider('ProxSoundPitch', { Text = 'Sound Pitch', Default = 1, M
 local ZRGroup     = Tabs.Misc:AddLeftGroupbox('Zero Recoil')
 local TracerGroup = Tabs.Misc:AddLeftGroupbox('Bullet Tracers')
 local FlyGroup    = Tabs.Misc:AddLeftGroupbox('Fly')
+local UnderGroup  = Tabs.Misc:AddLeftGroupbox('Underground')
 local DelGroup    = Tabs.Misc:AddRightGroupbox('Part Deleter')
 local HitboxGroup = Tabs.Misc:AddRightGroupbox('Hitbox Expander')
 local CamFXGroup  = Tabs.Misc:AddRightGroupbox('Camera Effects')
 local ItemGroup   = Tabs.Misc:AddRightGroupbox('Item Model Chams')
 local HitmarkGroup = Tabs.Misc:AddLeftGroupbox('Cursor Controls')
+
+UnderGroup:AddToggle('UndergroundEnabled', {
+    Text = 'Enable Underground',
+    Default = false,
+    Tooltip = 'Sinks underground for 8s, surfaces for 3s, loops',
+}):AddKeyPicker('UndergroundKeybind', { Default = 'None', Text = 'Underground Toggle', Mode = 'Toggle' })
+Options.UndergroundKeybind:OnClick(function()
+    Toggles.UndergroundEnabled:SetValue(not Toggles.UndergroundEnabled.Value)
+end)
 
 ZRGroup:AddToggle('ZeroRecoil', { Text = 'Enable Zero Recoil', Default = false })
 
@@ -353,7 +388,10 @@ TracerGroup:AddToggle('TracerEnabled', { Text = 'Enable Tracers', Default = fals
 TracerGroup:AddSlider('TracerLifetime', { Text = 'Trail Lifetime (s)', Default = 4, Min = 1, Max = 15, Rounding = 0 })
 
 -- Fly UI — toggle replaces the fly button from the original GUI script
-FlyGroup:AddToggle('FlyEnabled', { Text = 'Enable Fly', Default = false })
+FlyGroup:AddToggle('FlyEnabled', { Text = 'Enable Fly', Default = false }):AddKeyPicker('FlyKeybind', { Default = 'None', Text = 'Fly Toggle', Mode = 'Toggle' })
+Options.FlyKeybind:OnClick(function()
+    Toggles.FlyEnabled:SetValue(not Toggles.FlyEnabled.Value)
+end)
 FlyGroup:AddSlider('FlySpeed', { Text = 'Fly Speed', Default = 50, Min = 1, Max = 200, Rounding = 0 })
 
 local SoundGroup = Tabs.Misc:AddLeftGroupbox('Hit & Kill Sounds')
@@ -362,7 +400,10 @@ local ModDetGroup = Tabs.Misc:AddRightGroupbox('Mod Detection')
 SpeedGroup:AddToggle('SpeedEnabled', {
     Text = 'Enable Speed',
     Default = false,
-})
+}):AddKeyPicker('SpeedKeybind', { Default = 'None', Text = 'Speed Toggle', Mode = 'Toggle' })
+Options.SpeedKeybind:OnClick(function()
+    Toggles.SpeedEnabled:SetValue(not Toggles.SpeedEnabled.Value)
+end)
 SpeedGroup:AddSlider('SpeedValue', {
     Text = 'Speed (studs/s)',
     Default = 32,
@@ -373,7 +414,7 @@ SpeedGroup:AddSlider('SpeedValue', {
 
 ModDetGroup:AddToggle('ModDetEnabled', {
     Text = 'Enable Mod Detection',
-    Default = false,
+    Default = true,
     Tooltip = 'Kicks known mod userids from your server',
 })
 SoundGroup:AddToggle('HitSoundEnabled', { Text = 'Enable Hit Sound', Default = false })
@@ -411,8 +452,8 @@ HitboxGroup:AddDropdown('HitboxMaterial', {
 })
 HitboxGroup:AddLabel('Hitbox Color:'):AddColorPicker('HitboxColor', { Default = Color3.fromRGB(255, 0, 0), Title = 'Hitbox Color' })
 
-DelGroup:AddLabel('Left Alt = Delete')
-DelGroup:AddLabel('Shift + Left Alt = Undo')
+DelGroup:AddLabel('Delete Key:'):AddKeyPicker('PartDeleterKey', { Default = 'LeftAlt', Text = 'Delete Part Key', Mode = 'Hold' })
+DelGroup:AddLabel('Hold Shift + key above = Undo')
 DelGroup:AddButton({
     Text = 'Undo Last Delete',
     Func = function()
@@ -434,7 +475,7 @@ DelGroup:AddButton({
 local AmbianceGroup = Tabs.Ambiance:AddLeftGroupbox('Visuals')
 
 AmbianceGroup:AddToggle('NoFog', { Text = 'No Fog', Default = false })
-AmbianceGroup:AddSlider('CustomFOV', { Text = 'Field of View', Default = 70, Min = 30, Max = 120, Rounding = 0 })
+AmbianceGroup:AddToggle('DisableRain', { Text = 'Disable Rain Sound', Default = false, Tooltip = 'Disables the looping Rain sound in SoundService' })
 AmbianceGroup:AddToggle('FullBright', { Text = 'Full Bright', Default = false })
 AmbianceGroup:AddToggle('NoBlur', { Text = 'No Blur', Default = false })
 
@@ -476,6 +517,18 @@ Toggles.NoFog:OnChanged(function()
         Lighting.FogStart = originalFogStart
     end
 end)
+
+local function applyRainSetting()
+    local ss = game:GetService("SoundService")
+    local rain = ss:FindFirstChild("Rain")
+    if rain and rain:IsA("Sound") then
+        rain.Looped = not (Toggles.DisableRain and Toggles.DisableRain.Value)
+        if Toggles.DisableRain and Toggles.DisableRain.Value then
+            rain:Stop()
+        end
+    end
+end
+Toggles.DisableRain:OnChanged(applyRainSetting)
 
 Toggles.FullBright:OnChanged(function()
     if Toggles.FullBright.Value then
@@ -559,6 +612,7 @@ local function createESPBox()
         DistText   = Drawing.new("Text"),
         HealthBg   = Drawing.new("Square"),
         HealthFill = Drawing.new("Square"),
+        RepText    = Drawing.new("Text"),
     }
     box.Outline.Visible = false; box.Outline.Color = Color3.new(0,0,0); box.Outline.Thickness = 3; box.Outline.Filled = false
     box.Fill.Visible = false; box.Fill.Color = Color3.fromRGB(255,182,193); box.Fill.Thickness = 2; box.Fill.Filled = false
@@ -567,6 +621,7 @@ local function createESPBox()
     box.DistText.Visible = false; box.DistText.Color = Color3.new(0.8,0.8,0.8); box.DistText.Size = 12; box.DistText.Center = true; box.DistText.Outline = true; box.DistText.Font = Drawing.Fonts.Monospace
     box.HealthBg.Visible = false; box.HealthBg.Color = Color3.new(0,0,0); box.HealthBg.Filled = false; box.HealthBg.Thickness = 1
     box.HealthFill.Visible = false; box.HealthFill.Color = Color3.new(0,1,0); box.HealthFill.Filled = true; box.HealthFill.Thickness = 0
+    box.RepText.Visible = false; box.RepText.Color = Color3.fromRGB(255,215,0); box.RepText.Size = 12; box.RepText.Center = true; box.RepText.Outline = true; box.RepText.Font = Drawing.Fonts.Monospace
     return box
 end
 
@@ -575,6 +630,7 @@ local function hideESPBox(box)
     box.NameText.Visible = false; box.StatusText.Visible = false
     box.DistText.Visible = false
     box.HealthBg.Visible = false; box.HealthFill.Visible = false
+    box.RepText.Visible = false
 end
 
 local function removeESPBox(box)
@@ -582,6 +638,7 @@ local function removeESPBox(box)
     box.NameText:Remove(); box.StatusText:Remove()
     box.DistText:Remove()
     box.HealthBg:Remove(); box.HealthFill:Remove()
+    box.RepText:Remove()
 end
 
 -- ============================================================
@@ -716,7 +773,7 @@ end
 -- every frame in the render loop, so this is always current.
 local CALIBRATED_FOV = 70
 local function getVisualRadius(rawRadius)
-    local fov = Camera.FieldOfView  -- always live, set by render loop from slider
+    local fov = Camera.FieldOfView
     local scale = math.tan(math.rad(fov / 2)) / math.tan(math.rad(CALIBRATED_FOV / 2))
     return rawRadius * scale
 end
@@ -772,6 +829,18 @@ local function predictPosition(model, aimPart, origin, speed)
     local root = model:FindFirstChild("HumanoidRootPart") or aimPart
     local vel = root.AssemblyLinearVelocity or Vector3.zero
     if vel.Magnitude < 1 then return aimPart.Position end
+    -- Check if in car
+    local inCar = model:IsDescendantOf(Lighting)
+    if inCar then
+        -- only predict if VehiclePrediction toggle is on
+        if not (Toggles.VehiclePrediction and Toggles.VehiclePrediction.Value) then
+            return aimPart.Position
+        end
+    else
+        if not (Toggles.Prediction and Toggles.Prediction.Value) then
+            return aimPart.Position
+        end
+    end
     local t = (aimPart.Position - origin).Magnitude / speed
     return aimPart.Position + Vector3.new(vel.X, 0, vel.Z) * t
 end
@@ -789,11 +858,7 @@ local function buildAimCFrame(originCF, speed)
         or  (model:FindFirstChild("Torso") or model:FindFirstChild("Head") or model.PrimaryPart)
     if not aimPart then return nil end
     local aimPos
-    if Toggles.Prediction and Toggles.Prediction.Value then
-        aimPos = predictPosition(model, aimPart, originCF.Position, speed) + Vector3.new(0, headLock and 0.1 or 0.35, 0)
-    else
-        aimPos = aimPart.Position + Vector3.new(0, headLock and 0.1 or 0.35, 0)
-    end
+    aimPos = predictPosition(model, aimPart, originCF.Position, speed) + Vector3.new(0, headLock and 0.1 or 0.35, 0)
     local finalPos = aimPos
     local dist = math.floor((aimPos - originCF.Position).Magnitude)
     -- hit sound/notify handled by health watcher
@@ -894,10 +959,10 @@ local function updateWatermark(dt)
         local dist = (myRoot and theirRoot) and math.floor((myRoot.Position - theirRoot.Position).Magnitude) or 0
         local hp = humanoid and math.floor(humanoid.Health) or 0
         local maxHp = humanoid and math.floor(humanoid.MaxHealth) or 0
-        Library:SetWatermark(('cumyin.xyz | %s | HP:%d/%d | %dm | spd:%d | %dfps | %dms'):format(
+        Library:SetWatermark(('cumyin.pro | %s | HP:%d/%d | %dm | spd:%d | %dfps | %dms'):format(
             locked_player.Name, hp, maxHp, dist, math.floor(last_bullet_speed), math.floor(FPS), ping))
     else
-        Library:SetWatermark(('cumyin.xyz | No Target | %dfps | %dms'):format(math.floor(FPS), ping))
+        Library:SetWatermark(('cumyin.pro | No Target | %dfps | %dms'):format(math.floor(FPS), ping))
     end
 end
 
@@ -978,7 +1043,7 @@ local function applyHook()
     rawset(bullet_module, HOOK_TAG, true)
     original_newbullet = capturedOrig
     bullet_module.newbullet = hooked_newbullet
-    print("c7 api (orig=" .. tostring(capturedOrig) .. ")")
+    print("✅ Silent aim hook applied (orig=" .. tostring(capturedOrig) .. ")")
 end
 
 -- Background hook health-check: runs every 2s outside render budget
@@ -1145,8 +1210,52 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ============================================================
--- CAMERA EFFECTS DISABLE
+-- UNDERGROUND
 -- ============================================================
+local undergroundActive = false
+local undergroundThread = nil
+local UNDERGROUND_DEPTH = 30
+
+local function stopUnderground()
+    undergroundActive = false
+    if undergroundThread then
+        pcall(function() task.cancel(undergroundThread) end)
+        undergroundThread = nil
+    end
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if root then root.Anchored = false end
+end
+
+local function runUndergroundLoop()
+    undergroundActive = true
+    while undergroundActive and Toggles.UndergroundEnabled and Toggles.UndergroundEnabled.Value do
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if root then
+            root.Anchored = true
+            root.CFrame = CFrame.new(root.Position.X, root.Position.Y - UNDERGROUND_DEPTH, root.Position.Z)
+            task.wait(10)
+            if not undergroundActive then root.Anchored = false; break end
+            root.CFrame = CFrame.new(root.Position.X, root.Position.Y + UNDERGROUND_DEPTH, root.Position.Z)
+            root.Anchored = false
+            task.wait(3)
+        else
+            task.wait(1)
+        end
+    end
+    undergroundActive = false
+end
+
+Toggles.UndergroundEnabled:OnChanged(function()
+    if Toggles.UndergroundEnabled.Value then
+        undergroundThread = task.spawn(runUndergroundLoop)
+    else
+        stopUnderground()
+    end
+end)
+
+
 local function applyCamFX()
     local cam = workspace:FindFirstChild("Camera")
     if not cam then return end
@@ -1305,6 +1414,43 @@ Toggles.HitmarkEnabled:OnChanged(function()
     end
 end)
 
+-- ============================================================
+-- COMPASS CLONE
+-- Duplicates PlayerGui > Navigation > Compass frame and makes it visible
+-- ============================================================
+local compassClone = nil
+
+local function getOrCreateCompassClone()
+    if compassClone and compassClone.Parent then return compassClone end
+    compassClone = nil
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    if not pg then return nil end
+    local nav = pg:FindFirstChild("Navigation")
+    if not nav then return nil end
+    local existing = nav:FindFirstChild("cumyin_compass")
+    if existing then compassClone = existing; return compassClone end
+    local original = nav:FindFirstChild("Compass")
+    if not original then return nil end
+    local clone = original:Clone()
+    clone.Name = "cumyin_compass"
+    clone.Visible = false
+    clone.ZIndex = (original.ZIndex or 1) + 1
+    clone.Parent = nav
+    compassClone = clone
+    return compassClone
+end
+
+Toggles.CompassEnabled:OnChanged(function()
+    if Toggles.CompassEnabled.Value then
+        local c = getOrCreateCompassClone()
+        if c then c.Visible = true end
+    else
+        if compassClone and compassClone.Parent then
+            compassClone.Visible = false
+        end
+    end
+end)
+
 RunService.Heartbeat:Connect(function(dt)
     if not (Toggles.HitmarkEnabled and Toggles.HitmarkEnabled.Value) then return end
     local hm = getOrCreateHitmarkClone()
@@ -1366,6 +1512,13 @@ RunService:BindToRenderStep("AimLock", Enum.RenderPriority.Camera.Value + 1, fun
     local alFOV = Options.AimLockFOV and Options.AimLockFOV.Value or 150
     local target = getTargetInFOV(alFOV)
     if not target then aimlock_active = false; return end
+    -- Skip players in car (character parented to Lighting)
+    do
+        local ok, charCheck = pcall(function() return getModel:Invoke(target) end)
+        if ok and charCheck and charCheck:IsDescendantOf(Lighting) then
+            aimlock_active = false; return
+        end
+    end
     aimlock_active = true
     local model = getModel:Invoke(target)
     if not model then return end
@@ -1409,7 +1562,9 @@ end)
 -- ============================================================
 UserInputService.InputBegan:Connect(function(input, gp)
     if gp then return end
-    if input.KeyCode ~= Enum.KeyCode.LeftAlt then return end
+    local delKey = Options.PartDeleterKey and Options.PartDeleterKey.Value
+    local keyCode = delKey and Enum.KeyCode[delKey] or Enum.KeyCode.LeftAlt
+    if input.KeyCode ~= keyCode then return end
     if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
         if #deletedParts > 0 then
             local last = table.remove(deletedParts)
@@ -1436,10 +1591,6 @@ local frameCount = 0
 RunService.RenderStepped:Connect(function(dt)
     frameCount += 1
     updateWatermark(dt)
-    -- FOV enforce
-    local targetFOV = Options.CustomFOV and Options.CustomFOV.Value or 70
-    if Camera.FieldOfView ~= targetFOV then Camera.FieldOfView = targetFOV end
-
     -- Ambiance enforce (loop so game can't override)
     if Toggles.NoFog and Toggles.NoFog.Value then
         if Lighting.FogEnd < 1e5 then Lighting.FogEnd=1e6; Lighting.FogStart=1e6 end
@@ -1713,6 +1864,18 @@ RunService.RenderStepped:Connect(function(dt)
             box.DistText.Text = dist.."m"
         end
 
+        -- reputation
+        local showRep = Toggles.ESPReputation and Toggles.ESPReputation.Value
+        box.RepText.Visible = showRep
+        if showRep then
+            local ls = player:FindFirstChild("leaderstats")
+            local repStat = ls and (ls:FindFirstChild("Reputation") or ls:FindFirstChild("Rep") or ls:FindFirstChild("rep"))
+            local repVal = repStat and tostring(repStat.Value) or "?"
+            local offsetY = (showNames and showDist) and 46 or (showNames or showDist) and 32 or 18
+            box.RepText.Position = Vector2.new(cx, minY - offsetY)
+            box.RepText.Text = "Rep: " .. repVal
+        end
+
         -- health bar
         box.HealthBg.Visible = showHealth; box.HealthFill.Visible = showHealth
         if showHealth and humanoid.MaxHealth > 0 then
@@ -1826,6 +1989,91 @@ RunService.RenderStepped:Connect(function(dt)
         for player in pairs(arrowObjects) do
             if not player.Parent then
                 arrowObjects[player]:Remove(); arrowObjects[player] = nil
+            end
+        end
+    end
+
+    -- ======================================================
+    -- SKELETON ESP (uses direct character body parts)
+    -- ======================================================
+    do
+        local skelOn    = Toggles.SkeletonEnabled and Toggles.SkeletonEnabled.Value
+        local skelColor = Options.SkeletonColor and Options.SkeletonColor.Value or Color3.fromRGB(0,255,100)
+        local skelThick = Options.SkeletonThickness and Options.SkeletonThickness.Value or 2
+
+        local SKEL_CONNECTIONS = {
+            { "Head",      "Torso"      },
+            { "Torso",     "left arm"   },
+            { "Torso",     "right arm"  },
+            { "Torso",     "left leg"   },
+            { "Torso",     "right leg"  },
+        }
+
+        for _, player in pairs(Players:GetPlayers()) do
+            if player == LocalPlayer then continue end
+
+            if not skelOn then
+                if skeletonLines[player] then
+                    for _, l in pairs(skeletonLines[player]) do l.Visible = false end
+                end
+                continue
+            end
+
+            local ok, char = pcall(function() return getModel:Invoke(player) end)
+            if not ok or not char then
+                if skeletonLines[player] then
+                    for _, l in pairs(skeletonLines[player]) do l.Visible = false end
+                end
+                continue
+            end
+
+            local humanoid = char:FindFirstChild("Humanoid")
+            if not humanoid or humanoid.Health <= 0 then
+                if skeletonLines[player] then
+                    for _, l in pairs(skeletonLines[player]) do l.Visible = false end
+                end
+                continue
+            end
+
+            local hitbox = char:FindFirstChild("Hitbox")
+            if not hitbox then
+                if skeletonLines[player] then
+                    for _, l in pairs(skeletonLines[player]) do l.Visible = false end
+                end
+                continue
+            end
+
+            if not skeletonLines[player] then skeletonLines[player] = {} end
+            local lines = skeletonLines[player]
+
+            for i, conn in ipairs(SKEL_CONNECTIONS) do
+                local partA = hitbox:FindFirstChild(conn[1])
+                local partB = hitbox:FindFirstChild(conn[2])
+                if not lines[i] then
+                    local l = Drawing.new("Line")
+                    l.Visible = false; l.Thickness = skelThick
+                    l.Color = skelColor; l.Transparency = 1
+                    lines[i] = l
+                end
+                local line = lines[i]
+                line.Color = skelColor
+                line.Thickness = skelThick
+                if partA and partB then
+                    local spA, onA = Camera:WorldToViewportPoint(partA.Position)
+                    local spB, onB = Camera:WorldToViewportPoint(partB.Position)
+                    if onA and onB and spA.Z > 0 and spB.Z > 0 then
+                        line.From = Vector2.new(spA.X, spA.Y)
+                        line.To   = Vector2.new(spB.X, spB.Y)
+                        line.Visible = true
+                    else
+                        line.Visible = false
+                    end
+                else
+                    line.Visible = false
+                end
+            end
+            for i = #SKEL_CONNECTIONS + 1, #lines do
+                if lines[i] then lines[i].Visible = false end
             end
         end
     end
@@ -2010,6 +2258,10 @@ Players.PlayerRemoving:Connect(function(p)
     if espBoxes[p] then removeESPBox(espBoxes[p]); espBoxes[p] = nil end
     if chamsData[p] then restoreChams(p) end
     if arrowObjects[p] then arrowObjects[p]:Remove(); arrowObjects[p] = nil end
+    if skeletonLines[p] then
+        for _, l in pairs(skeletonLines[p]) do pcall(function() l:Remove() end) end
+        skeletonLines[p] = nil
+    end
     espRayParams[p] = nil
 end)
 
@@ -2044,6 +2296,12 @@ MenuGroup:AddButton('Unload', function()
     end
     arrowObjects = {}
 
+    -- Skeleton lines
+    for _, lines in pairs(skeletonLines) do
+        for _, l in pairs(lines) do pcall(function() l:Remove() end) end
+    end
+    skeletonLines = {}
+
     -- ESP Lite chams — restore all original part colors
     for player, _ in pairs(chamsData) do
         pcall(function() restoreChams(player) end)
@@ -2068,6 +2326,12 @@ MenuGroup:AddButton('Unload', function()
     if hitmarkClone and hitmarkClone.Parent then
         pcall(function() hitmarkClone:Destroy() end)
         hitmarkClone = nil
+    end
+
+    -- Compass clone
+    if compassClone and compassClone.Parent then
+        pcall(function() compassClone:Destroy() end)
+        compassClone = nil
     end
 
     -- Fly — stop and remove movers
@@ -2101,6 +2365,9 @@ MenuGroup:AddButton('Unload', function()
         end
         deletedParts = {}
     end)
+
+    -- Underground stop
+    pcall(stopUnderground)
 
     -- Restore camera FOV
     pcall(function() Camera.FieldOfView = 70 end)
@@ -2156,7 +2423,7 @@ ThemeManager:ApplyToTab(Tabs['UI Settings'])
 SaveManager:LoadAutoloadConfig()
 
 Library:SetWatermarkVisibility(true)
-Library:SetWatermark('cumyin.xyz | No Target')
+Library:SetWatermark('cumyin.pro | No Target')
 
 
 -- ============================================================

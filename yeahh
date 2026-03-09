@@ -146,7 +146,7 @@ end)
 -- WINDOW
 -- ============================================================
 local Window = Library:CreateWindow({
-    Title = 'cumyin.pro 1.1A || private',
+    Title = 'cumyin.pro 1.2A || private',
     Center = true,
     AutoShow = true,
     TabPadding = 8,
@@ -292,6 +292,11 @@ ESPGroup:AddToggle('ESPDisplayName', { Text = 'Use Display Name', Default = fals
 ESPGroup:AddToggle('ESPDistance', { Text = 'Show Distance', Default = true })
 ESPGroup:AddToggle('ESPHealth', { Text = 'Show Health Bar', Default = true })
 ESPGroup:AddToggle('ESPReputation', { Text = 'Show Reputation', Default = false, Tooltip = 'Shows player rep from leaderstats' })
+ESPGroup:AddToggle('ESPRankViewer', {
+    Text = 'Rank Viewer',
+    Default = false,
+    Tooltip = 'Click a player in ESP to show their rank card using the game native UI',
+})
 
 ESPGroup:AddSlider('ESPThickness', { Text = 'Box Thickness', Default = 1, Min = 1, Max = 5, Rounding = 0 })
 ESPGroup:AddLabel('Box Color:'):AddColorPicker('ESPBoxColor', { Default = Color3.fromRGB(255, 182, 193), Title = 'Hidden Color' })
@@ -366,12 +371,15 @@ ESPArrowGroup:AddSlider('ProxSoundPitch', { Text = 'Sound Pitch', Default = 1, M
 local ZRGroup     = Tabs.Misc:AddLeftGroupbox('Zero Recoil')
 local TracerGroup = Tabs.Misc:AddLeftGroupbox('Bullet Tracers')
 local FlyGroup    = Tabs.Misc:AddLeftGroupbox('Fly')
+local FreeCamGroup = Tabs.Misc:AddLeftGroupbox('Free Camera')
 local UnderGroup  = Tabs.Misc:AddLeftGroupbox('Underground')
 local DelGroup    = Tabs.Misc:AddRightGroupbox('Part Deleter')
 local HitboxGroup = Tabs.Misc:AddRightGroupbox('Hitbox Expander')
 local CamFXGroup  = Tabs.Misc:AddRightGroupbox('Camera Effects')
 local ItemGroup   = Tabs.Misc:AddRightGroupbox('Item Model Chams')
 local HitmarkGroup = Tabs.Misc:AddLeftGroupbox('Cursor Controls')
+local AirdropESPGroup = Tabs.ESP:AddRightGroupbox('Airdrop ESP')
+local CarESPGroup     = Tabs.ESP:AddRightGroupbox('Vehicle ESP')
 
 UnderGroup:AddToggle('UndergroundEnabled', {
     Text = 'Enable Underground',
@@ -394,9 +402,52 @@ Options.FlyKeybind:OnClick(function()
 end)
 FlyGroup:AddSlider('FlySpeed', { Text = 'Fly Speed', Default = 50, Min = 1, Max = 200, Rounding = 0 })
 
+FreeCamGroup:AddToggle('FreeCamEnabled', {
+    Text = 'Enable Free Camera',
+    Default = false,
+    Tooltip = 'Detaches camera from character — bypasses camera-distance anti-cheat',
+}):AddKeyPicker('FreeCamKeybind', { Default = 'None', Text = 'FreeCam Toggle', Mode = 'Toggle' })
+Options.FreeCamKeybind:OnClick(function()
+    Toggles.FreeCamEnabled:SetValue(not Toggles.FreeCamEnabled.Value)
+end)
+FreeCamGroup:AddSlider('FreeCamSpeed', { Text = 'Camera Speed', Default = 60, Min = 5, Max = 300, Rounding = 0 })
+
+-- Airdrop ESP UI
+AirdropESPGroup:AddToggle('AirdropESP', {
+    Text = 'Enable Airdrop ESP',
+    Default = false,
+    Tooltip = 'Shows airdrop location on screen',
+})
+AirdropESPGroup:AddToggle('AirdropArrow', {
+    Text = 'Show Arrow',
+    Default = true,
+    Tooltip = 'Arrow pointing to airdrop when off-screen',
+})
+AirdropESPGroup:AddLabel('Airdrop Color:'):AddColorPicker('AirdropColor', {
+    Default = Color3.fromRGB(255, 200, 0),
+    Title = 'Airdrop ESP Color',
+})
+
+-- Vehicle ESP UI
+CarESPGroup:AddToggle('CarESP', {
+    Text = 'Enable Vehicle ESP',
+    Default = false,
+    Tooltip = 'Shows all vehicles in workspace.__cars',
+})
+CarESPGroup:AddToggle('CarESPOccupied', {
+    Text = 'Occupied Only',
+    Default = false,
+    Tooltip = 'Only show vehicles that have a player nearby',
+})
+CarESPGroup:AddLabel('Vehicle Color:'):AddColorPicker('CarESPColor', {
+    Default = Color3.fromRGB(100, 200, 255),
+    Title = 'Vehicle ESP Color',
+})
+
 local SoundGroup = Tabs.Misc:AddLeftGroupbox('Hit & Kill Sounds')
 local SpeedGroup  = Tabs.Misc:AddLeftGroupbox('Walk Speed')
 local ModDetGroup = Tabs.Misc:AddRightGroupbox('Mod Detection')
+local ACBypassGroup = Tabs.Misc:AddRightGroupbox('Anti-Cheat Bypass')
 SpeedGroup:AddToggle('SpeedEnabled', {
     Text = 'Enable Speed',
     Default = false,
@@ -416,6 +467,21 @@ ModDetGroup:AddToggle('ModDetEnabled', {
     Text = 'Enable Mod Detection',
     Default = true,
     Tooltip = 'Kicks known mod userids from your server',
+})
+ACBypassGroup:AddToggle('ACBypassEnabled', {
+    Text = 'Enable AC Bypass',
+    Default = false,
+    Tooltip = 'stinky ac no',
+})
+ACBypassGroup:AddToggle('ACBypassHideHighlights', {
+    Text = 'Hide Illegal Highlights',
+    Default = true,
+    Tooltip = 'stinky no ac highlight',
+})
+ACBypassGroup:AddToggle('ACBypassCamProximity', {
+    Text = 'Keep Camera Close',
+    Default = true,
+    Tooltip = 'Keeps camera within 30 studs of character during freecam to avoid camera-distance kick',
 })
 SoundGroup:AddToggle('HitSoundEnabled', { Text = 'Enable Hit Sound', Default = false })
 SoundGroup:AddInput('HitSoundID', { Text = 'Hit Sound ID', Default = '78469882347907', Placeholder = 'rbxassetid://...' })
@@ -478,6 +544,20 @@ AmbianceGroup:AddToggle('NoFog', { Text = 'No Fog', Default = false })
 AmbianceGroup:AddToggle('DisableRain', { Text = 'Disable Rain Sound', Default = false, Tooltip = 'Disables the looping Rain sound in SoundService' })
 AmbianceGroup:AddToggle('FullBright', { Text = 'Full Bright', Default = false })
 AmbianceGroup:AddToggle('NoBlur', { Text = 'No Blur', Default = false })
+AmbianceGroup:AddToggle('NoSunRays', { Text = 'No Sun Rays', Default = false, Tooltip = 'Disables SunRaysEffect in Lighting' })
+AmbianceGroup:AddToggle('NoBloom', { Text = 'No Bloom', Default = false, Tooltip = 'Disables BloomEffect in Lighting' })
+AmbianceGroup:AddToggle('NoGlare', { Text = 'No Glare', Default = false, Tooltip = 'Disables SunGlare/LensFlare in Lighting' })
+AmbianceGroup:AddToggle('FlatSky', { Text = 'Black Sky', Default = false, Tooltip = 'Sets sky to pitch black — cleaner for PvP visibility' })
+AmbianceGroup:AddToggle('NoShadows', { Text = 'No Shadows', Default = false, Tooltip = 'Disables shadow casting on all parts' })
+AmbianceGroup:AddSlider('TimeOfDay', {
+    Text = 'Time of Day',
+    Default = 14,
+    Min = 0,
+    Max = 24,
+    Rounding = 0,
+    Tooltip = 'Set lighting clock time (0=midnight, 14=2pm)',
+})
+AmbianceGroup:AddToggle('TimeOfDayEnabled', { Text = 'Lock Time of Day', Default = false })
 
 local AmbianceColorGroup = Tabs.Ambiance:AddRightGroupbox('Lighting Colors')
 AmbianceColorGroup:AddToggle('CustomLighting', { Text = 'Enable Custom Lighting', Default = false })
@@ -1214,7 +1294,7 @@ end)
 -- ============================================================
 local undergroundActive = false
 local undergroundThread = nil
-local UNDERGROUND_DEPTH = 30
+local UNDERGROUND_DEPTH = 10
 
 local function stopUnderground()
     undergroundActive = false
@@ -1583,6 +1663,198 @@ UserInputService.InputBegan:Connect(function(input, gp)
         end
     end
 end)
+
+
+-- ============================================================
+-- FREECAM
+-- ============================================================
+local freeCamActive = false
+local freeCamCFrame = nil
+
+local function getRepRank(rep)
+    rep = tonumber(rep) or 0
+    if rep <= -100000 then return "Demon",           Color3.fromRGB(180,0,0)
+    elseif rep <= -50000 then return "Monster",      Color3.fromRGB(200,30,0)
+    elseif rep <= -20000 then return "Serial Killer",Color3.fromRGB(210,60,0)
+    elseif rep <= -10000 then return "Assassin",     Color3.fromRGB(220,90,0)
+    elseif rep <= -5000  then return "Bandit",       Color3.fromRGB(200,120,0)
+    elseif rep <= -1000  then return "Thug",         Color3.fromRGB(190,150,0)
+    elseif rep <= -100   then return "Outlaw",       Color3.fromRGB(180,160,50)
+    elseif rep < 100     then return "Civilian",     Color3.fromRGB(200,200,200)
+    elseif rep < 1000    then return "Deputy",       Color3.fromRGB(100,180,255)
+    elseif rep < 5000    then return "Lawman",       Color3.fromRGB(80,160,255)
+    elseif rep < 10000   then return "Guardian",     Color3.fromRGB(60,200,255)
+    elseif rep < 20000   then return "Hero",         Color3.fromRGB(50,220,150)
+    elseif rep < 50000   then return "Omega Hero",   Color3.fromRGB(100,255,100)
+    elseif rep < 100000  then return "Savior",       Color3.fromRGB(200,255,50)
+    else                      return "Angel",        Color3.fromRGB(255,255,255)
+    end
+end
+
+local function activateFreeCam()
+    if freeCamActive then return end
+    freeCamActive = true
+    freeCamCFrame = Camera.CFrame
+    Camera.CameraType = Enum.CameraType.Scriptable
+end
+
+local function deactivateFreeCam()
+    if not freeCamActive then return end
+    freeCamActive = false
+    Camera.CameraType = Enum.CameraType.Custom
+end
+
+Toggles.FreeCamEnabled:OnChanged(function()
+    if Toggles.FreeCamEnabled.Value then activateFreeCam() else deactivateFreeCam() end
+end)
+
+-- ============================================================
+-- RANK VIEWER
+-- ============================================================
+local rankViewerClone = nil
+
+local function showRankCard(player)
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    if not pg then return end
+    local rankFrame = nil
+    for _, gui in ipairs(pg:GetChildren()) do
+        if gui:IsA("ScreenGui") then
+            rankFrame = gui:FindFirstChild("RankFrame", true)
+                or gui:FindFirstChild("ProfileFrame", true)
+                or gui:FindFirstChild("RankCard", true)
+                or gui:FindFirstChild("PlayerCard", true)
+            if rankFrame then break end
+        end
+    end
+    if not rankFrame then return end
+    if rankViewerClone and rankViewerClone.Parent then rankViewerClone:Destroy() end
+    local clone = rankFrame:Clone()
+    clone.Name = "cumyin_rankviewer"
+    local nameLabel = clone:FindFirstChild("PlayerName", true) or clone:FindFirstChild("Username", true)
+    local repLabel  = clone:FindFirstChild("Reputation", true) or clone:FindFirstChild("Rep", true)
+    local rankLabel = clone:FindFirstChild("RankName", true) or clone:FindFirstChild("Rank", true)
+    if nameLabel and nameLabel:IsA("TextLabel") then
+        nameLabel.Text = player.DisplayName .. " (@" .. player.Name .. ")"
+    end
+    local ls = player:FindFirstChild("leaderstats")
+    local repStat = ls and (ls:FindFirstChild("Reputation") or ls:FindFirstChild("Rep") or ls:FindFirstChild("rep"))
+    local repVal  = repStat and repStat.Value or 0
+    if repLabel and repLabel:IsA("TextLabel") then repLabel.Text = tostring(repVal) end
+    if rankLabel and rankLabel:IsA("TextLabel") then
+        local rName, rCol = getRepRank(repVal)
+        rankLabel.Text = rName; rankLabel.TextColor3 = rCol
+    end
+    clone.Position = UDim2.new(0.5, 0, 0.5, 0)
+    clone.AnchorPoint = Vector2.new(0.5, 0.5)
+    clone.Visible = true; clone.ZIndex = 999
+    clone.Parent = rankFrame.Parent
+    rankViewerClone = clone
+    task.delay(4, function()
+        if rankViewerClone == clone and clone.Parent then
+            clone:Destroy(); rankViewerClone = nil
+        end
+    end)
+end
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if not (Toggles.ESPRankViewer and Toggles.ESPRankViewer.Value) then return end
+    if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+    local mp = UserInputService:GetMouseLocation()
+    local closest, closestDist = nil, 60
+    for player, box in pairs(espBoxes) do
+        if box.Fill.Visible then
+            local bPos = box.Fill.Position; local bSize = box.Fill.Size
+            local cx = bPos.X + bSize.X/2; local cy = bPos.Y + bSize.Y/2
+            local d = (Vector2.new(mp.X, mp.Y) - Vector2.new(cx, cy)).Magnitude
+            if d < closestDist then closestDist = d; closest = player end
+        end
+    end
+    if closest then showRankCard(closest) end
+end)
+
+-- ============================================================
+-- AIRDROP ESP STATE
+-- ============================================================
+local airdropLabel = Drawing.new("Text")
+airdropLabel.Visible = false; airdropLabel.Size = 14; airdropLabel.Center = true
+airdropLabel.Outline = true; airdropLabel.Font = Drawing.Fonts.Monospace
+
+local airdropArrow = Drawing.new("Triangle")
+airdropArrow.Visible = false; airdropArrow.Filled = true
+airdropArrow.Thickness = 1; airdropArrow.Transparency = 1
+
+-- ============================================================
+-- CAR ESP STATE
+-- ============================================================
+local carESPLabels = {}
+
+-- ============================================================
+-- ANTI-CHEAT BYPASS
+-- ============================================================
+RunService:BindToRenderStep("cumyin_acbypass", Enum.RenderPriority.First.Value, function()
+    if not (Toggles.ACBypassEnabled and Toggles.ACBypassEnabled.Value) then return end
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChild("Humanoid")
+    if not hum then return end
+    if hum.WalkSpeed > 23     then hum.WalkSpeed    = 23   end
+    if hum.JumpPower > 27     then hum.JumpPower     = 27   end
+    if hum.HipHeight > 0.25   then hum.HipHeight     = 0.25 end
+    if hum.MaxSlopeAngle > 61 then hum.MaxSlopeAngle = 61   end
+    if Toggles.ACBypassHideHighlights and Toggles.ACBypassHideHighlights.Value then
+        for _, obj in ipairs(Camera:GetChildren()) do
+            if (obj:IsA("Highlight") or obj:IsA("SelectionBox") or obj:IsA("SurfaceGui"))
+            and obj.Name ~= "cumyin_internal" then
+                pcall(function() obj:Destroy() end)
+            end
+        end
+    end
+end)
+
+-- ============================================================
+-- EXTRA AMBIANCE HANDLERS
+-- ============================================================
+Toggles.NoSunRays:OnChanged(function()
+    for _, e in ipairs(Lighting:GetChildren()) do
+        if e:IsA("SunRaysEffect") then e.Enabled = not Toggles.NoSunRays.Value end
+    end
+end)
+
+Toggles.NoBloom:OnChanged(function()
+    for _, e in ipairs(Lighting:GetChildren()) do
+        if e:IsA("BloomEffect") then e.Enabled = not Toggles.NoBloom.Value end
+    end
+end)
+
+Toggles.NoGlare:OnChanged(function()
+    for _, e in ipairs(Lighting:GetChildren()) do
+        if e.ClassName == "SunGlare" or e.ClassName == "LensFlare" or e:IsA("SunRaysEffect") then
+            e.Enabled = not Toggles.NoGlare.Value
+        end
+    end
+end)
+
+Toggles.FlatSky:OnChanged(function()
+    local sky = Lighting:FindFirstChildWhichIsA("Sky")
+    if Toggles.FlatSky.Value then
+        if sky then sky.Parent = game:GetService("ReplicatedStorage") end
+    else
+        local stored = game:GetService("ReplicatedStorage"):FindFirstChildWhichIsA("Sky")
+        if stored then stored.Parent = Lighting end
+    end
+end)
+
+Toggles.NoShadows:OnChanged(function()
+    Lighting.GlobalShadows = not Toggles.NoShadows.Value
+end)
+
+local function applyTimeOfDay()
+    if not (Toggles.TimeOfDayEnabled and Toggles.TimeOfDayEnabled.Value) then return end
+    Lighting.ClockTime = Options.TimeOfDay and Options.TimeOfDay.Value or 14
+end
+Toggles.TimeOfDayEnabled:OnChanged(applyTimeOfDay)
+Options.TimeOfDay:OnChanged(applyTimeOfDay)
 
 -- ============================================================
 -- MAIN RENDER LOOP
@@ -2194,6 +2466,162 @@ RunService.RenderStepped:Connect(function(dt)
         end
     end
 
+
+    -- ======================================================
+    -- FREECAM UPDATE
+    -- ======================================================
+    if freeCamActive and Toggles.FreeCamEnabled and Toggles.FreeCamEnabled.Value then
+        local spd = (Options.FreeCamSpeed and Options.FreeCamSpeed.Value or 60) * dt
+        local cf  = freeCamCFrame or Camera.CFrame
+        local mv  = Vector3.zero
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then mv = mv + cf.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then mv = mv - cf.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then mv = mv - cf.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then mv = mv + cf.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.E) then mv = mv + Vector3.new(0,1,0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Q) then mv = mv - Vector3.new(0,1,0) end
+        if mv.Magnitude > 0 then
+            freeCamCFrame = CFrame.new(cf.Position + mv.Unit * spd) * (cf - cf.Position)
+        end
+        -- AC bypass: keep camera logically close to character even while freecam roams
+        -- We move a tiny invisible part to our char to satisfy the server check, but
+        -- the actual rendered camera is the freeCamCFrame.
+        if Toggles.ACBypassCamProximity and Toggles.ACBypassCamProximity.Value then
+            -- Nothing needed client-side; the server check is camera.p vs rootPart.p
+            -- and camera CFrame on server is replicated from our scriptable cam.
+            -- To avoid the >33 stud flag we just keep freecam within 32 studs
+            local char = LocalPlayer.Character
+            local root = char and (char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart)
+            if root and freeCamCFrame then
+                local dist = (freeCamCFrame.Position - root.Position).Magnitude
+                if dist > 30 then
+                    -- clamp: nudge cam position toward char so it stays within 30 studs
+                    local dir = (freeCamCFrame.Position - root.Position).Unit
+                    freeCamCFrame = CFrame.new(root.Position + dir * 30) * (freeCamCFrame - freeCamCFrame.Position)
+                end
+            end
+        end
+        Camera.CFrame = freeCamCFrame
+    elseif not (Toggles.FreeCamEnabled and Toggles.FreeCamEnabled.Value) and freeCamActive then
+        deactivateFreeCam()
+    end
+
+    -- ======================================================
+    -- AIRDROP ESP
+    -- ======================================================
+    do
+        local adOn    = Toggles.AirdropESP and Toggles.AirdropESP.Value
+        local adCol   = Options.AirdropColor and Options.AirdropColor.Value or Color3.fromRGB(255,200,0)
+        local adArrow = Toggles.AirdropArrow and Toggles.AirdropArrow.Value
+        airdropLabel.Color = adCol
+        airdropArrow.Color = adCol
+
+        local locator = workspace:FindFirstChild("Airdrop") and workspace.Airdrop:FindFirstChild("Locator")
+        if adOn and locator and locator:IsA("BasePart") then
+            local sp, onScreen = Camera:WorldToViewportPoint(locator.Position)
+            if onScreen and sp.Z > 0 then
+                airdropLabel.Visible = true
+                airdropArrow.Visible = false
+                airdropLabel.Position = Vector2.new(sp.X, sp.Y - 20)
+                local myRoot = LocalPlayer.Character and LocalPlayer.Character.PrimaryPart
+                local dist = myRoot and math.floor((myRoot.Position - locator.Position).Magnitude) or 0
+                airdropLabel.Text = "AIRDROP  " .. dist .. "m"
+            else
+                airdropLabel.Visible = false
+                if adArrow then
+                    airdropArrow.Visible = true
+                    local vc   = Camera.ViewportSize / 2
+                    local myRP = LocalPlayer.Character and LocalPlayer.Character.PrimaryPart
+                    if myRP then
+                        local camP  = Camera.CFrame.Position
+                        local rel   = CFrame.new(Vector3.new(myRP.Position.X, camP.Y, myRP.Position.Z), camP)
+                                          :PointToObjectSpace(locator.Position)
+                        local dir2  = Vector2.new(rel.X, rel.Z).Unit
+                        local adist = 90
+                        local base  = dir2 * adist
+                        local half  = 10
+                        local function rv(v, deg)
+                            local a = math.rad(deg)
+                            return Vector2.new(v.X*math.cos(a)-v.Y*math.sin(a), v.X*math.sin(a)+v.Y*math.cos(a))
+                        end
+                        airdropArrow.PointA = vc - (base + rv(dir2, 90)*half)
+                        airdropArrow.PointB = vc - (base + rv(dir2,-90)*half)
+                        airdropArrow.PointC = vc - (dir2 * (adist + 16))
+                    end
+                else
+                    airdropArrow.Visible = false
+                end
+            end
+        else
+            airdropLabel.Visible = false
+            airdropArrow.Visible = false
+        end
+    end
+
+    -- ======================================================
+    -- VEHICLE ESP
+    -- ======================================================
+    do
+        local carOn       = Toggles.CarESP and Toggles.CarESP.Value
+        local carCol      = Options.CarESPColor and Options.CarESPColor.Value or Color3.fromRGB(100,200,255)
+        local occupiedOnly = Toggles.CarESPOccupied and Toggles.CarESPOccupied.Value
+        local carsFolder  = workspace:FindFirstChild("__cars")
+        local myRoot      = LocalPlayer.Character and LocalPlayer.Character.PrimaryPart
+
+        -- Remove labels for cars that are gone
+        for carModel, lbl in pairs(carESPLabels) do
+            if not carModel.Parent then
+                lbl:Remove(); carESPLabels[carModel] = nil
+            end
+        end
+
+        if carOn and carsFolder then
+            for _, car in ipairs(carsFolder:GetChildren()) do
+                if not car:IsA("Model") then continue end
+                local body = car.PrimaryPart or car:FindFirstChildWhichIsA("BasePart")
+                if not body then continue end
+
+                -- Occupied check: look for any player whose character is near this car
+                if occupiedOnly then
+                    local hasOccupant = false
+                    for _, plr in ipairs(Players:GetPlayers()) do
+                        if plr == LocalPlayer then continue end
+                        local char = plr.Character
+                        local root = char and (char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart)
+                        if root and (root.Position - body.Position).Magnitude < 15 then
+                            hasOccupant = true; break
+                        end
+                    end
+                    if not hasOccupant then
+                        if carESPLabels[car] then carESPLabels[car].Visible = false end
+                        continue
+                    end
+                end
+
+                if not carESPLabels[car] then
+                    local lbl = Drawing.new("Text")
+                    lbl.Size = 13; lbl.Center = true; lbl.Outline = true
+                    lbl.Font = Drawing.Fonts.Monospace; lbl.Visible = false
+                    carESPLabels[car] = lbl
+                end
+                local lbl = carESPLabels[car]
+                lbl.Color = carCol
+
+                local sp, onScreen = Camera:WorldToViewportPoint(body.Position + Vector3.new(0,2,0))
+                if onScreen and sp.Z > 0 then
+                    lbl.Visible = true
+                    lbl.Position = Vector2.new(sp.X, sp.Y)
+                    local dist = myRoot and math.floor((myRoot.Position - body.Position).Magnitude) or 0
+                    lbl.Text = (car.Name or "Vehicle") .. "  " .. dist .. "m"
+                else
+                    lbl.Visible = false
+                end
+            end
+        else
+            for _, lbl in pairs(carESPLabels) do lbl.Visible = false end
+        end
+    end
+
     -- cleanup stale boxes every 60 frames
     if frameCount % 60 == 0 then
         for player, box in pairs(espBoxes) do
@@ -2333,6 +2761,32 @@ MenuGroup:AddButton('Unload', function()
         pcall(function() compassClone:Destroy() end)
         compassClone = nil
     end
+
+    -- FreeCam cleanup
+    pcall(deactivateFreeCam)
+
+    -- Rank viewer cleanup
+    if rankViewerClone and rankViewerClone.Parent then
+        pcall(function() rankViewerClone:Destroy() end)
+        rankViewerClone = nil
+    end
+
+    -- Airdrop ESP cleanup
+    pcall(function() airdropLabel:Remove() end)
+    pcall(function() airdropArrow:Remove() end)
+
+    -- Car ESP cleanup
+    for _, lbl in pairs(carESPLabels) do pcall(function() lbl:Remove() end) end
+    carESPLabels = {}
+
+    -- AC bypass unbind
+    pcall(function() RunService:UnbindFromRenderStep("cumyin_acbypass") end)
+
+    -- Restore sky if FlatSky was on
+    pcall(function()
+        local stored = game:GetService("ReplicatedStorage"):FindFirstChildWhichIsA("Sky")
+        if stored then stored.Parent = Lighting end
+    end)
 
     -- Fly — stop and remove movers
     pcall(function()

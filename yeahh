@@ -146,7 +146,7 @@ end)
 -- WINDOW
 -- ============================================================
 local Window = Library:CreateWindow({
-    Title = 'cumyin.pro 1.2A || private',
+    Title = 'cumyin.pro 1.3A || private',
     Center = true,
     AutoShow = true,
     TabPadding = 8,
@@ -170,7 +170,7 @@ local SAGroup = Tabs.SilentAim:AddLeftGroupbox('Silent Aim')
 SAGroup:AddToggle('SilentAimEnabled', {
     Text = 'Enable Silent Aim',
     Default = true,
-    Tooltip = 'Redirects bullets toward target in FOV',
+    Tooltip = 'Automatically corrects aim toward the closest player in range',
 }):AddKeyPicker('SilentAimKeybind', { Default = 'None', Text = 'Silent Aim Toggle', Mode = 'Toggle' })
 Options.SilentAimKeybind:OnClick(function()
     Toggles.SilentAimEnabled:SetValue(not Toggles.SilentAimEnabled.Value)
@@ -180,13 +180,13 @@ SAGroup:AddDropdown('SAMethod', {
     Text = 'Method',
     Values = { 'CFrame LookAt', 'ViewportPointToRay', 'ScreenPointToRay', 'Ray.new', 'FindPartOnRay' },
     Default = 5,
-    Tooltip = 'bullet go zooooom target how',
+    Tooltip = 'How fast bullets travel — affects lead prediction accuracy',
 })
 
 SAGroup:AddToggle('HeadLock', {
     Text = 'Head Lock',
     Default = true,
-    Tooltip = 'Aim at head instead of torso',
+    Tooltip = 'Prioritise head over body when targeting',
 })
 
 
@@ -194,20 +194,14 @@ SAGroup:AddToggle('HeadLock', {
 SAGroup:AddToggle('Prediction', {
     Text = 'Movement Prediction',
     Default = true,
-    Tooltip = 'Leads moving targets',
-})
-
-SAGroup:AddToggle('VehiclePrediction', {
-    Text = 'Vehicle Prediction',
-    Default = false,
-    Tooltip = 'Predict car movement for silent aim — enable when target is driving',
+    Tooltip = 'Adjusts aim position for moving targets',
 })
 
 SAGroup:AddSlider('FOVRadius', {
     Text = 'FOV Radius',
     Default = 120,
     Min = 10,
-    Max = 500,
+    Max = 999,
     Rounding = 0,
 })
 
@@ -232,7 +226,7 @@ local ALGroup = Tabs.AimLock:AddLeftGroupbox('Aim Lock')
 ALGroup:AddToggle('AimLockEnabled', {
     Text = 'Enable Aim Lock',
     Default = false,
-    Tooltip = 'Smoothly locks your camera onto target',
+    Tooltip = 'Holds your camera on the nearest player in range',
 }):AddKeyPicker('AimLockKeybind', { Default = 'None', Text = 'Aim Lock Toggle', Mode = 'Toggle' })
 Options.AimLockKeybind:OnClick(function()
     Toggles.AimLockEnabled:SetValue(not Toggles.AimLockEnabled.Value)
@@ -241,20 +235,39 @@ end)
 ALGroup:AddToggle('AimLockRightClick', {
     Text = 'Require Right Click',
     Default = false,
-    Tooltip = 'Only locks while holding right mouse button',
+    Tooltip = 'Allows you to lock onto a character while right clicking',
 })
 
 ALGroup:AddToggle('AimLockLine', {
     Text = 'Show Aim Line',
     Default = false,
-    Tooltip = 'Draws a line from target to mouse position',
+    Tooltip = 'Draws a visual line from your crosshair to your target',
+})
+ALGroup:AddLabel('Line Color:'):AddColorPicker('AimLineColor', {
+    Default = Color3.fromRGB(167, 122, 235),
+    Title = 'Aim Line Color',
+})
+ALGroup:AddSlider('AimLineThickness', {
+    Text = 'Line Thickness',
+    Default = 1,
+    Min = 1,
+    Max = 8,
+    Rounding = 0,
+})
+ALGroup:AddSlider('AimLineTransparency', {
+    Text = 'Line Transparency',
+    Default = 10,
+    Min = 0,
+    Max = 100,
+    Rounding = 0,
+    Tooltip = 'lower = more transparent',
 })
 
 ALGroup:AddDropdown('AimLockPart', {
     Text = 'Target Part',
     Values = { 'Head', 'Torso', 'HumanoidRootPart' },
     Default = 2,
-    Tooltip = 'Which body part the aim lock tracks',
+    Tooltip = 'Choose which body part the lock tracks',
 })
 
 ALGroup:AddSlider('AimLockSmooth', {
@@ -263,14 +276,14 @@ ALGroup:AddSlider('AimLockSmooth', {
     Min = 2,
     Max = 10,
     Rounding = 0,
-    Tooltip = 'Higher = smoother/slower. Lower = snappier.',
+    Tooltip = 'How smooth the camera follows the target',
 })
 
 ALGroup:AddSlider('AimLockFOV', {
     Text = 'FOV Radius',
-    Default = 150,
+    Default = 120,
     Min = 10,
-    Max = 500,
+    Max = 999,
     Rounding = 0,
 })
 
@@ -286,17 +299,12 @@ local ESPGroup = Tabs.ESP:AddLeftGroupbox('ESP Settings')
 
 ESPGroup:AddToggle('ESPEnabled', { Text = 'Enable ESP', Default = false })
 ESPGroup:AddToggle('ESPBoxes', { Text = 'Show Boxes', Default = true })
-ESPGroup:AddToggle('ESPVisibleCheck', { Text = 'Visible Check', Default = true, Tooltip = 'White when visible, pink when hidden' })
+ESPGroup:AddToggle('ESPVisibleCheck', { Text = 'Visible Check', Default = true, Tooltip = 'Changes box colour based on whether the player is visible' })
 ESPGroup:AddToggle('ESPNames', { Text = 'Show Names', Default = true })
-ESPGroup:AddToggle('ESPDisplayName', { Text = 'Use Display Name', Default = false, Tooltip = 'Show display name instead of username' })
+ESPGroup:AddToggle('ESPDisplayName', { Text = 'Use Display Name', Default = false, Tooltip = 'Shows display name on the box instead of username' })
 ESPGroup:AddToggle('ESPDistance', { Text = 'Show Distance', Default = true })
 ESPGroup:AddToggle('ESPHealth', { Text = 'Show Health Bar', Default = true })
-ESPGroup:AddToggle('ESPReputation', { Text = 'Show Reputation', Default = false, Tooltip = 'Shows player rep from leaderstats' })
-ESPGroup:AddToggle('ESPRankViewer', {
-    Text = 'Rank Viewer',
-    Default = false,
-    Tooltip = 'Click a player in ESP to show their rank card using the game native UI',
-})
+ESPGroup:AddToggle('ESPReputation', { Text = 'Show Reputation', Default = false, Tooltip = 'Shows the reputation value below the player name' })
 
 ESPGroup:AddSlider('ESPThickness', { Text = 'Box Thickness', Default = 1, Min = 1, Max = 5, Rounding = 0 })
 ESPGroup:AddLabel('Box Color:'):AddColorPicker('ESPBoxColor', { Default = Color3.fromRGB(255, 182, 193), Title = 'Hidden Color' })
@@ -304,7 +312,7 @@ ESPGroup:AddLabel('Visible Color:'):AddColorPicker('ESPVisibleColor', { Default 
 
 -- ESP Lite: chams (recolor character parts for through-wall visibility)
 local ESPLiteGroup = Tabs.ESP:AddLeftGroupbox('Chams (ESP Lite)')
-ESPLiteGroup:AddToggle('ESPLiteEnabled', { Text = 'Enable Chams', Default = false, Tooltip = 'Recolors enemy parts — visible through walls, very cheap on CPU' })
+ESPLiteGroup:AddToggle('ESPLiteEnabled', { Text = 'Enable Chams', Default = false, Tooltip = 'Highlights player models — visible through walls' })
 ESPLiteGroup:AddToggle('ESPLiteNames', { Text = 'Show Names', Default = true })
 ESPLiteGroup:AddToggle('ESPLiteDisplayName', { Text = 'Use Display Name', Default = false })
 ESPLiteGroup:AddToggle('ESPLiteDist', { Text = 'Show Distance', Default = false })
@@ -322,11 +330,11 @@ SkeletonGroup:AddLabel('Skeleton Color:'):AddColorPicker('SkeletonColor', {
 })
 
 local CompassGroup = Tabs.ESP:AddRightGroupbox('Compass')
-CompassGroup:AddToggle('CompassEnabled', { Text = 'Enable Compass', Default = false, Tooltip = 'Shows the Navigation compass from PlayerGui' })
+CompassGroup:AddToggle('CompassEnabled', { Text = 'Enable Compass', Default = false, Tooltip = 'Displays a directional compass overlay on screen' })
 ESPArrowGroup:AddToggle('ESPArrows', {
     Text    = 'Enable Arrows',
     Default = false,
-    Tooltip = 'Draws a triangle pointing at off-screen players',
+    Tooltip = 'Shows a pointer for players that are off-screen',
 })
 ESPArrowGroup:AddSlider('ESPArrowDanger', {
     Text     = 'Max Distance (studs)',
@@ -384,7 +392,7 @@ local CarESPGroup     = Tabs.ESP:AddRightGroupbox('Vehicle ESP')
 UnderGroup:AddToggle('UndergroundEnabled', {
     Text = 'Enable Underground',
     Default = false,
-    Tooltip = 'Sinks underground for 8s, surfaces for 3s, loops',
+    Tooltip = 'Periodically moves you underground and back up',
 }):AddKeyPicker('UndergroundKeybind', { Default = 'None', Text = 'Underground Toggle', Mode = 'Toggle' })
 Options.UndergroundKeybind:OnClick(function()
     Toggles.UndergroundEnabled:SetValue(not Toggles.UndergroundEnabled.Value)
@@ -405,7 +413,7 @@ FlyGroup:AddSlider('FlySpeed', { Text = 'Fly Speed', Default = 50, Min = 1, Max 
 FreeCamGroup:AddToggle('FreeCamEnabled', {
     Text = 'Enable Free Camera',
     Default = false,
-    Tooltip = 'Detaches camera from character — bypasses camera-distance anti-cheat',
+    Tooltip = 'Lets you move the camera freely without moving your character',
 }):AddKeyPicker('FreeCamKeybind', { Default = 'None', Text = 'FreeCam Toggle', Mode = 'Toggle' })
 Options.FreeCamKeybind:OnClick(function()
     Toggles.FreeCamEnabled:SetValue(not Toggles.FreeCamEnabled.Value)
@@ -416,12 +424,12 @@ FreeCamGroup:AddSlider('FreeCamSpeed', { Text = 'Camera Speed', Default = 60, Mi
 AirdropESPGroup:AddToggle('AirdropESP', {
     Text = 'Enable Airdrop ESP',
     Default = false,
-    Tooltip = 'Shows airdrop location on screen',
+    Tooltip = 'Highlights active airdrops on screen',
 })
 AirdropESPGroup:AddToggle('AirdropArrow', {
     Text = 'Show Arrow',
     Default = true,
-    Tooltip = 'Arrow pointing to airdrop when off-screen',
+    Tooltip = 'Shows a pointer when the airdrop is off-screen',
 })
 AirdropESPGroup:AddLabel('Airdrop Color:'):AddColorPicker('AirdropColor', {
     Default = Color3.fromRGB(255, 200, 0),
@@ -432,12 +440,12 @@ AirdropESPGroup:AddLabel('Airdrop Color:'):AddColorPicker('AirdropColor', {
 CarESPGroup:AddToggle('CarESP', {
     Text = 'Enable Vehicle ESP',
     Default = false,
-    Tooltip = 'Shows all vehicles in workspace.__cars',
+    Tooltip = 'Highlights all vehicles in the world',
 })
 CarESPGroup:AddToggle('CarESPOccupied', {
     Text = 'Occupied Only',
     Default = false,
-    Tooltip = 'Only show vehicles that have a player nearby',
+    Tooltip = 'Only shows vehicles that appear to be occupied',
 })
 CarESPGroup:AddLabel('Vehicle Color:'):AddColorPicker('CarESPColor', {
     Default = Color3.fromRGB(100, 200, 255),
@@ -466,22 +474,22 @@ SpeedGroup:AddSlider('SpeedValue', {
 ModDetGroup:AddToggle('ModDetEnabled', {
     Text = 'Enable Mod Detection',
     Default = true,
-    Tooltip = 'Kicks known mod userids from your server',
+    Tooltip = 'Removes known cheaters from the session automatically',
 })
 ACBypassGroup:AddToggle('ACBypassEnabled', {
     Text = 'Enable AC Bypass',
     Default = false,
-    Tooltip = 'stinky ac no',
+    Tooltip = 'stinky ac go bye bye',
 })
 ACBypassGroup:AddToggle('ACBypassHideHighlights', {
     Text = 'Hide Illegal Highlights',
     Default = true,
-    Tooltip = 'stinky no ac highlight',
+    Tooltip = 'Cleans up visual objects that could draw attention',
 })
 ACBypassGroup:AddToggle('ACBypassCamProximity', {
     Text = 'Keep Camera Close',
     Default = true,
-    Tooltip = 'Keeps camera within 30 studs of character during freecam to avoid camera-distance kick',
+    Tooltip = 'Prevents the camera from moving too far from your character',
 })
 SoundGroup:AddToggle('HitSoundEnabled', { Text = 'Enable Hit Sound', Default = false })
 SoundGroup:AddInput('HitSoundID', { Text = 'Hit Sound ID', Default = '78469882347907', Placeholder = 'rbxassetid://...' })
@@ -491,17 +499,17 @@ SoundGroup:AddInput('KillSoundID', { Text = 'Kill Sound ID', Default = '13057662
 SoundGroup:AddSlider('KillSoundPitch', { Text = 'Kill Pitch', Default = 2, Min = 0.1, Max = 3, Rounding = 1 })
 
 -- Camera Effects UI
-CamFXGroup:AddToggle('DisableCamEffects', { Text = 'Disable Camera Colour Correction', Default = false, Tooltip = 'Disables healtheffect1 and ColourCorrection in Camera' })
+CamFXGroup:AddToggle('DisableCamEffects', { Text = 'Disable Camera Colour Correction', Default = false, Tooltip = 'Removes post-processing effects applied by the game' })
 
 -- Item Model Chams UI (sources from ReplicatedStorage>Items)
-ItemGroup:AddToggle('ItemChamEnabled', { Text = 'Enable Item Chams', Default = false, Tooltip = 'Chams for primary/secondary/melee/attachment' })
+ItemGroup:AddToggle('ItemChamEnabled', { Text = 'Enable Item Chams', Default = false, Tooltip = 'Highlights the weapon you are currently holding' })
 ItemGroup:AddLabel('Item Color:'):AddColorPicker('ItemChamColor', { Default = Color3.fromRGB(0, 200, 255), Title = 'Item Cham Color' })
-ItemGroup:AddToggle('ArmChamEnabled', { Text = 'Enable Arm Chams', Default = false, Tooltip = 'Chams for Left Arm / Right Arm in localmodel' })
+ItemGroup:AddToggle('ArmChamEnabled', { Text = 'Enable Arm Chams', Default = false, Tooltip = 'Highlights your own arms in first-person view' })
 ItemGroup:AddToggle('ArmChamRainbow', { Text = 'Arm Rainbow', Default = false })
 ItemGroup:AddLabel('Arm Color:'):AddColorPicker('ArmChamColor', { Default = Color3.fromRGB(255, 150, 50), Title = 'Arm Cham Color' })
 
 -- Cursor Controls UI
-HitmarkGroup:AddToggle('HitmarkEnabled', { Text = 'Enable Cursor Controls', Default = false, Tooltip = 'Duplicates hitmark image and allows full control' })
+HitmarkGroup:AddToggle('HitmarkEnabled', { Text = 'Enable Cursor Controls', Default = false, Tooltip = 'Lets you customise the hitmark crosshair appearance' })
 HitmarkGroup:AddToggle('HitmarkForceVisible', { Text = 'Force Visible', Default = false })
 HitmarkGroup:AddToggle('HitmarkAutoRotate', { Text = 'Auto Rotate', Default = false })
 HitmarkGroup:AddSlider('HitmarkRotation', { Text = 'Static Rotation', Default = 0, Min = 0, Max = 360, Rounding = 0 })
@@ -541,21 +549,21 @@ DelGroup:AddButton({
 local AmbianceGroup = Tabs.Ambiance:AddLeftGroupbox('Visuals')
 
 AmbianceGroup:AddToggle('NoFog', { Text = 'No Fog', Default = false })
-AmbianceGroup:AddToggle('DisableRain', { Text = 'Disable Rain Sound', Default = false, Tooltip = 'Disables the looping Rain sound in SoundService' })
+AmbianceGroup:AddToggle('DisableRain', { Text = 'Disable Rain Sound', Default = false, Tooltip = 'Mutes ambient rain audio' })
 AmbianceGroup:AddToggle('FullBright', { Text = 'Full Bright', Default = false })
 AmbianceGroup:AddToggle('NoBlur', { Text = 'No Blur', Default = false })
-AmbianceGroup:AddToggle('NoSunRays', { Text = 'No Sun Rays', Default = false, Tooltip = 'Disables SunRaysEffect in Lighting' })
-AmbianceGroup:AddToggle('NoBloom', { Text = 'No Bloom', Default = false, Tooltip = 'Disables BloomEffect in Lighting' })
-AmbianceGroup:AddToggle('NoGlare', { Text = 'No Glare', Default = false, Tooltip = 'Disables SunGlare/LensFlare in Lighting' })
-AmbianceGroup:AddToggle('FlatSky', { Text = 'Black Sky', Default = false, Tooltip = 'Sets sky to pitch black — cleaner for PvP visibility' })
-AmbianceGroup:AddToggle('NoShadows', { Text = 'No Shadows', Default = false, Tooltip = 'Disables shadow casting on all parts' })
+AmbianceGroup:AddToggle('NoSunRays', { Text = 'No Sun Rays', Default = false, Tooltip = 'Removes sun ray shafts from the scene' })
+AmbianceGroup:AddToggle('NoBloom', { Text = 'No Bloom', Default = false, Tooltip = 'Removes glow bloom from bright light sources' })
+AmbianceGroup:AddToggle('NoGlare', { Text = 'No Glare', Default = false, Tooltip = 'Removes lens flare and sun glare effects' })
+AmbianceGroup:AddToggle('FlatSky', { Text = 'Black Sky', Default = false, Tooltip = 'Replaces the skybox with a solid black background' })
+AmbianceGroup:AddToggle('NoShadows', { Text = 'No Shadows', Default = false, Tooltip = 'Removes all dynamic shadows from the world' })
 AmbianceGroup:AddSlider('TimeOfDay', {
     Text = 'Time of Day',
     Default = 14,
     Min = 0,
     Max = 24,
     Rounding = 0,
-    Tooltip = 'Set lighting clock time (0=midnight, 14=2pm)',
+    Tooltip = 'Manually set the in-game time of day',
 })
 AmbianceGroup:AddToggle('TimeOfDayEnabled', { Text = 'Lock Time of Day', Default = false })
 
@@ -909,17 +917,9 @@ local function predictPosition(model, aimPart, origin, speed)
     local root = model:FindFirstChild("HumanoidRootPart") or aimPart
     local vel = root.AssemblyLinearVelocity or Vector3.zero
     if vel.Magnitude < 1 then return aimPart.Position end
-    -- Check if in car
-    local inCar = model:IsDescendantOf(Lighting)
-    if inCar then
-        -- only predict if VehiclePrediction toggle is on
-        if not (Toggles.VehiclePrediction and Toggles.VehiclePrediction.Value) then
-            return aimPart.Position
-        end
-    else
-        if not (Toggles.Prediction and Toggles.Prediction.Value) then
-            return aimPart.Position
-        end
+    -- Standard prediction only (car targeting disabled at buildAimCFrame level)
+    if not (Toggles.Prediction and Toggles.Prediction.Value) then
+        return aimPart.Position
     end
     local t = (aimPart.Position - origin).Magnitude / speed
     return aimPart.Position + Vector3.new(vel.X, 0, vel.Z) * t
@@ -932,6 +932,8 @@ local function buildAimCFrame(originCF, speed)
     if not locked_player then return nil end
     local model = getModel:Invoke(locked_player)
     if not model or not model.Parent then return nil end
+    -- Disable silent aim for players in a vehicle (character parented to Lighting)
+    if model:IsDescendantOf(Lighting) then return nil end
     local headLock = Toggles.HeadLock and Toggles.HeadLock.Value
     local aimPart = headLock
         and (model:FindFirstChild("Head") or model:FindFirstChild("Torso") or model.PrimaryPart)
@@ -1100,16 +1102,22 @@ hooked_newbullet = function(tag, player, cf, speed, power, pellet, sniper, trace
         return orig(tag, player, cf, speed, power, pellet, sniper, tracer)
     end
 
-    if not (Toggles.SilentAimEnabled and Toggles.SilentAimEnabled.Value) or not locked_player then
-        return orig(tag, player, cf, speed, power, pellet, sniper, tracer)
+    -- FreeCam bullet origin: fire from freecam position instead of gun barrel
+    local effectiveCF = cf
+    if freeCamActive and Toggles.FreeCamEnabled and Toggles.FreeCamEnabled.Value and freeCamCFrame then
+        effectiveCF = freeCamCFrame
     end
 
-    local ok, newCF = pcall(buildAimCFrame, cf, speed)
+    if not (Toggles.SilentAimEnabled and Toggles.SilentAimEnabled.Value) or not locked_player then
+        return orig(tag, player, effectiveCF, speed, power, pellet, sniper, tracer)
+    end
+
+    local ok, newCF = pcall(buildAimCFrame, effectiveCF, speed)
     if ok and newCF then
         return orig(tag, player, newCF, speed, power, pellet, sniper, tracer)
     else
         if not ok then warn("sa err " .. tostring(newCF)) end
-        return orig(tag, player, cf, speed, power, pellet, sniper, tracer)
+        return orig(tag, player, effectiveCF, speed, power, pellet, sniper, tracer)
     end
 end
 
@@ -1630,7 +1638,10 @@ RunService:BindToRenderStep("AimLock", Enum.RenderPriority.Camera.Value + 1, fun
         local partSP, partOn = Camera:WorldToViewportPoint(aimPart.Position)
         if partOn and partSP.Z > 0 then
             local mousePos = UserInputService:GetMouseLocation()
-            aimLine.Visible = true
+            aimLine.Visible      = true
+            aimLine.Color        = Options.AimLineColor and Options.AimLineColor.Value or Color3.fromRGB(167,122,235)
+            aimLine.Thickness    = Options.AimLineThickness and Options.AimLineThickness.Value or 2
+            aimLine.Transparency = Options.AimLineTransparency and (Options.AimLineTransparency.Value / 100) or 0.1
             aimLine.From = Vector2.new(partSP.X, partSP.Y)
             aimLine.To = mousePos
         end
@@ -1668,40 +1679,98 @@ end)
 -- ============================================================
 -- FREECAM
 -- ============================================================
-local freeCamActive = false
-local freeCamCFrame = nil
+local freeCamActive   = false
+local freeCamCFrame   = nil
+local freeCamYaw      = 0
+local freeCamPitch    = 0
+local freeCamLastMouse = nil
 
+-- getRepRank: returns rankName, textColor, strokeColor matching v_u_25 from game source
+-- Usage: local name, col, stroke = getRepRank(repValue)
 local function getRepRank(rep)
     rep = tonumber(rep) or 0
-    if rep <= -100000 then return "Demon",           Color3.fromRGB(180,0,0)
-    elseif rep <= -50000 then return "Monster",      Color3.fromRGB(200,30,0)
-    elseif rep <= -20000 then return "Serial Killer",Color3.fromRGB(210,60,0)
-    elseif rep <= -10000 then return "Assassin",     Color3.fromRGB(220,90,0)
-    elseif rep <= -5000  then return "Bandit",       Color3.fromRGB(200,120,0)
-    elseif rep <= -1000  then return "Thug",         Color3.fromRGB(190,150,0)
-    elseif rep <= -100   then return "Outlaw",       Color3.fromRGB(180,160,50)
-    elseif rep < 100     then return "Civilian",     Color3.fromRGB(200,200,200)
-    elseif rep < 1000    then return "Deputy",       Color3.fromRGB(100,180,255)
-    elseif rep < 5000    then return "Lawman",       Color3.fromRGB(80,160,255)
-    elseif rep < 10000   then return "Guardian",     Color3.fromRGB(60,200,255)
-    elseif rep < 20000   then return "Hero",         Color3.fromRGB(50,220,150)
-    elseif rep < 50000   then return "Omega Hero",   Color3.fromRGB(100,255,100)
-    elseif rep < 100000  then return "Savior",       Color3.fromRGB(200,255,50)
-    else                      return "Angel",        Color3.fromRGB(255,255,255)
+    if rep > 99999 then
+        return "Angel",
+            Color3.new(0, 0.68, 1),
+            Color3.new(0.51, 1, 0.33)
+    elseif rep > 49999 then
+        return "Savior",
+            Color3.new(0.8, 1, 0.74),
+            Color3.new(0, 0.81, 0)
+    elseif rep > 9999 then
+        return "Omega Hero",
+            Color3.new(0, 1, 0),
+            Color3.new(0, 0.5, 0)
+    elseif rep > 1999 then
+        return "Hero",
+            Color3.new(0, 1, 0.667),
+            Color3.new(0.17, 0.5, 0.47)
+    elseif rep > 249 then
+        return "Guardian",
+            Color3.new(0, 1, 1),
+            Color3.new(0, 0.55, 0.55)
+    elseif rep > 49 then
+        return "Lawman",
+            Color3.new(0, 0.5, 1),
+            Color3.new(0, 0.25, 0.5)
+    elseif rep > 0 then
+        return "Deputy",
+            Color3.new(0, 0, 0.5),
+            Color3.new(0, 0.36, 0.71)
+    elseif rep == 0 then
+        return "Civilian",
+            Color3.new(1, 1, 1),
+            Color3.new(0.2, 0.2, 0.2)
+    elseif rep > -50 then
+        return "Outlaw",
+            Color3.new(0.24, 0.24, 0.24),
+            Color3.new(0.11, 0.11, 0.11)
+    elseif rep > -250 then
+        return "Thug",
+            Color3.new(0.47, 0.47, 0.47),
+            Color3.new(0, 0, 0)
+    elseif rep > -2000 then
+        return "Bandit",
+            Color3.new(1, 0.26, 0.26),
+            Color3.new(0.35, 0.15, 0.15)
+    elseif rep > -10000 then
+        return "Assassin",
+            Color3.new(1, 0, 0),
+            Color3.new(0, 0, 0)
+    elseif rep > -50000 then
+        return "Serial Killer",
+            Color3.new(0.77, 0, 0),
+            Color3.new(0, 0, 0)
+    elseif rep > -100000 then
+        return "Monster",
+            Color3.new(0.12, 0.12, 0.12),
+            Color3.new(0.71, 0.03, 0.03)
+    else
+        return "Demon",
+            Color3.new(0, 0, 0),
+            Color3.new(1, 0, 0)
     end
 end
 
 local function activateFreeCam()
     if freeCamActive then return end
-    freeCamActive = true
-    freeCamCFrame = Camera.CFrame
+    freeCamActive   = true
+    freeCamCFrame   = Camera.CFrame
+    -- Decompose initial angles so mouse delta is relative
+    local _, _, _, r00, r01, r02, r10, r11, r12, r20, r21, r22 = Camera.CFrame:GetComponents()
+    freeCamYaw   = math.atan2(-r02, r22)
+    freeCamPitch = math.asin(math.clamp(r12, -1, 1))
+    freeCamLastMouse = nil
     Camera.CameraType = Enum.CameraType.Scriptable
+    UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
 end
 
 local function deactivateFreeCam()
     if not freeCamActive then return end
     freeCamActive = false
+    freeCamLastMouse = nil
     Camera.CameraType = Enum.CameraType.Custom
+    UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 end
 
 Toggles.FreeCamEnabled:OnChanged(function()
@@ -1711,67 +1780,162 @@ end)
 -- ============================================================
 -- RANK VIEWER
 -- ============================================================
-local rankViewerClone = nil
 
-local function showRankCard(player)
-    local pg = LocalPlayer:FindFirstChild("PlayerGui")
-    if not pg then return end
-    local rankFrame = nil
-    for _, gui in ipairs(pg:GetChildren()) do
-        if gui:IsA("ScreenGui") then
-            rankFrame = gui:FindFirstChild("RankFrame", true)
-                or gui:FindFirstChild("ProfileFrame", true)
-                or gui:FindFirstChild("RankCard", true)
-                or gui:FindFirstChild("PlayerCard", true)
-            if rankFrame then break end
-        end
-    end
-    if not rankFrame then return end
-    if rankViewerClone and rankViewerClone.Parent then rankViewerClone:Destroy() end
-    local clone = rankFrame:Clone()
-    clone.Name = "cumyin_rankviewer"
-    local nameLabel = clone:FindFirstChild("PlayerName", true) or clone:FindFirstChild("Username", true)
-    local repLabel  = clone:FindFirstChild("Reputation", true) or clone:FindFirstChild("Rep", true)
-    local rankLabel = clone:FindFirstChild("RankName", true) or clone:FindFirstChild("Rank", true)
-    if nameLabel and nameLabel:IsA("TextLabel") then
-        nameLabel.Text = player.DisplayName .. " (@" .. player.Name .. ")"
-    end
-    local ls = player:FindFirstChild("leaderstats")
-    local repStat = ls and (ls:FindFirstChild("Reputation") or ls:FindFirstChild("Rep") or ls:FindFirstChild("rep"))
-    local repVal  = repStat and repStat.Value or 0
-    if repLabel and repLabel:IsA("TextLabel") then repLabel.Text = tostring(repVal) end
-    if rankLabel and rankLabel:IsA("TextLabel") then
-        local rName, rCol = getRepRank(repVal)
-        rankLabel.Text = rName; rankLabel.TextColor3 = rCol
-    end
-    clone.Position = UDim2.new(0.5, 0, 0.5, 0)
-    clone.AnchorPoint = Vector2.new(0.5, 0.5)
-    clone.Visible = true; clone.ZIndex = 999
-    clone.Parent = rankFrame.Parent
-    rankViewerClone = clone
-    task.delay(4, function()
-        if rankViewerClone == clone and clone.Parent then
-            clone:Destroy(); rankViewerClone = nil
-        end
-    end)
+-- ============================================================
+-- OWNER / SPECIAL TAG LIST
+-- Add lowercase usernames or numeric UserIds to the sets below.
+-- ============================================================
+local CUMYIN_NAMES = {
+    ["sadafalt88"] = true,
+    ["myalt4789"] = true,
+}
+local CUMYIN_IDS = {
+    [8407048411] = true,
+    [4561897663] = true,
+}
+
+local GREEN_NAMES = {
+    ["TheNinjaNoobplays"] = true,
+    ["sadafplayz_09"] = true,
+}
+local GREEN_IDS = {
+    [2284312468] = true,
+    [1809251236] = true,
+}
+
+local SPECIAL_TAGS_DEF = {
+    cumyin = { label = "cumyin", col = Color3.fromRGB(9,9,11),    stroke = Color3.fromRGB(216,184,255) },
+    green  = { label = "Green",  col = Color3.fromRGB(0,170,127), stroke = Color3.fromRGB(0,255,127)   },
+}
+
+local function getSpecialTag(player)
+    local name = player.Name:lower()
+    local id   = player.UserId
+    if CUMYIN_NAMES[name] or CUMYIN_IDS[id] then return SPECIAL_TAGS_DEF.cumyin end
+    if GREEN_NAMES[name]  or GREEN_IDS[id]  then return SPECIAL_TAGS_DEF.green  end
+    return nil
 end
 
-UserInputService.InputBegan:Connect(function(input, gpe)
-    if gpe then return end
-    if not (Toggles.ESPRankViewer and Toggles.ESPRankViewer.Value) then return end
-    if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
-    local mp = UserInputService:GetMouseLocation()
-    local closest, closestDist = nil, 60
-    for player, box in pairs(espBoxes) do
-        if box.Fill.Visible then
-            local bPos = box.Fill.Position; local bSize = box.Fill.Size
-            local cx = bPos.X + bSize.X/2; local cy = bPos.Y + bSize.Y/2
-            local d = (Vector2.new(mp.X, mp.Y) - Vector2.new(cx, cy)).Magnitude
-            if d < closestDist then closestDist = d; closest = player end
-        end
+-- ============================================================
+-- NAMETAG LABEL
+-- Clone LocalPlayer > PlayerGui > Characterizer > Nametag > TextLabel once,
+-- rename to cumyin_nametaglabel, then update its text/colours every frame
+-- based on whichever player the mouse is hovering over in ESP.
+-- ============================================================
+local nametagLabel       = nil   -- our cloned TextLabel
+local nametagTargetPlayer = nil  -- player currently shown
+
+-- Destroy the standalone Nametag ScreenGui the game puts in PlayerGui —
+-- we use the one inside Characterizer instead.
+local function nukeStandaloneNametag()
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    if not pg then return end
+    local sg = pg:FindFirstChild("Nametag")
+    if sg and sg:IsA("ScreenGui") then pcall(function() sg:Destroy() end) end
+end
+nukeStandaloneNametag()
+-- Re-nuke on any future respawn (game reclones it each character load)
+LocalPlayer.PlayerGui.ChildAdded:Connect(function(child)
+    if child.Name == "Nametag" and child:IsA("ScreenGui") then
+        pcall(function() child:Destroy() end)
     end
-    if closest then showRankCard(closest) end
 end)
+
+local function getOrCreateNametagLabel()
+    if nametagLabel and nametagLabel.Parent then return nametagLabel end
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    if not pg then return nil end
+    local characterizer = pg:FindFirstChild("Characterizer")
+    if not characterizer then return nil end
+    local nametag = characterizer:FindFirstChild("Nametag", true)
+    if not nametag then return nil end
+    local original = nametag:FindFirstChildWhichIsA("TextLabel")
+    if not original then return nil end
+    -- Delete any previous clone
+    local old = nametag:FindFirstChild("cumyin_nametaglabel")
+    if old then old:Destroy() end
+    -- Clone and replace original so ours is the only one
+    local clone = original:Clone()
+    clone.Name = "cumyin_nametaglabel"
+    clone.Visible = false
+    clone.TextStrokeTransparency = 0
+    clone.ZIndex = (original.ZIndex or 1) + 10
+    clone.Parent = nametag
+    original:Destroy()
+    nametagLabel = clone
+    return nametagLabel
+end
+
+local function v_u_25(p24)
+    -- Exact copy of game's rank function — returns rankName, { textCol, strokeCol }
+    if p24 > 99999 then
+        return "Angel",        { Color3.new(0, 0.68, 255),            Color3.new(0.51, 1, 0.33)       }
+    elseif p24 > 49999 then
+        return "Savior",       { Color3.new(0.8, 1, 0.74),            Color3.new(0, 0.81, 0)          }
+    elseif p24 > 9999 then
+        return "Omega Hero",   { Color3.new(0, 1, 0),                 Color3.new(0, 0.5, 0)           }
+    elseif p24 > 1999 then
+        return "Hero",         { Color3.new(0, 1, 0.667),             Color3.new(0.17, 0.5, 0.47)     }
+    elseif p24 > 249 then
+        return "Guardian",     { Color3.new(0, 1, 1),                 Color3.new(0, 0.55, 0.55)       }
+    elseif p24 > 49 then
+        return "Lawman",       { Color3.new(0, 0.5, 1),               Color3.new(0, 0.25, 0.5)        }
+    elseif p24 > 0 then
+        return "Deputy",       { Color3.new(0, 0, 0.5),               Color3.new(0, 0.36, 0.71)       }
+    elseif p24 == 0 then
+        return "Civilian",     { Color3.new(1, 1, 1),                 Color3.new(0.2, 0.2, 0.2)       }
+    elseif p24 > -50 then
+        return "Outlaw",       { Color3.new(0.24, 0.24, 0.24),        Color3.new(0.11, 0.11, 0.11)    }
+    elseif p24 > -250 then
+        return "Thug",         { Color3.new(0.47, 0.47, 0.47),        Color3.new(0, 0, 0)             }
+    elseif p24 > -2000 then
+        return "Bandit",       { Color3.new(1, 0.26, 0.26),           Color3.new(0.35, 0.15, 0.15)    }
+    elseif p24 > -10000 then
+        return "Assassin",     { Color3.new(1, 0, 0),                 Color3.new(0, 0, 0)             }
+    elseif p24 > -50000 then
+        return "Serial Killer",{ Color3.new(0.77, 0, 0),              Color3.new(0, 0, 0)             }
+    elseif p24 > -100000 then
+        return "Monster",      { Color3.new(0.12, 0.12, 0.12),        Color3.new(0.71, 0.03, 0.03)    }
+    else
+        return "Demon",        { Color3.new(0, 0, 0),                 Color3.new(1, 0, 0)             }
+    end
+end
+
+local function updateNametag(hoveredPlayer)
+    local lbl = getOrCreateNametagLabel()
+    if not lbl then return end
+
+    if not hoveredPlayer then
+        lbl.Visible = false
+        nametagTargetPlayer = nil
+        return
+    end
+
+    nametagTargetPlayer = hoveredPlayer
+
+    -- Check special tag overrides first
+    local special = getSpecialTag(hoveredPlayer)
+    if special then
+        lbl.Text                   = hoveredPlayer.Name .. " [" .. special.label .. "]"
+        lbl.TextColor3             = special.col
+        lbl.TextStrokeColor3       = special.stroke
+        lbl.TextStrokeTransparency = 0
+        lbl.Visible                = true
+        return
+    end
+
+    -- Normal rank path
+    local ls      = hoveredPlayer:FindFirstChild("leaderstats")
+    local repStat = ls and (ls:FindFirstChild("Reputation") or ls:FindFirstChild("Rep") or ls:FindFirstChild("rep"))
+    local repVal  = repStat and repStat.Value or 0
+
+    local rankName, cols = v_u_25(repVal)
+    lbl.Text                   = hoveredPlayer.Name .. " [" .. rankName .. "]"
+    lbl.TextColor3             = cols[1]
+    lbl.TextStrokeColor3       = cols[2]
+    lbl.TextStrokeTransparency = 0
+    lbl.Visible                = true
+end
 
 -- ============================================================
 -- AIRDROP ESP STATE
@@ -2033,6 +2197,7 @@ RunService.RenderStepped:Connect(function(dt)
         end
 
         local inLighting = character:IsDescendantOf(Lighting)
+
         local inWorld = character:IsDescendantOf(workspace)
         if not inWorld and not inLighting then
             if espBoxes[player] then removeESPBox(espBoxes[player]); espBoxes[player]=nil end
@@ -2159,6 +2324,11 @@ RunService.RenderStepped:Connect(function(dt)
             box.HealthFill.Size = Vector2.new(2,(height-2)*pct)
         end
     end
+
+    -- ======================================================
+    -- NAMETAG (shows for current locked target)
+    -- ======================================================
+    updateNametag(locked_player)
 
     -- ======================================================
     -- ARROWS (off-screen player indicators)
@@ -2472,36 +2642,41 @@ RunService.RenderStepped:Connect(function(dt)
     -- ======================================================
     if freeCamActive and Toggles.FreeCamEnabled and Toggles.FreeCamEnabled.Value then
         local spd = (Options.FreeCamSpeed and Options.FreeCamSpeed.Value or 60) * dt
-        local cf  = freeCamCFrame or Camera.CFrame
-        local mv  = Vector3.zero
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) then mv = mv + cf.LookVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) then mv = mv - cf.LookVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then mv = mv - cf.RightVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) then mv = mv + cf.RightVector end
+
+        -- Mouse look via delta
+        local mouseDelta = UserInputService:GetMouseDelta()
+        local sensitivity = 0.003
+        freeCamYaw   = freeCamYaw   - mouseDelta.X * sensitivity
+        freeCamPitch = math.clamp(freeCamPitch - mouseDelta.Y * sensitivity, -math.pi/2 + 0.05, math.pi/2 - 0.05)
+
+        local rotCF = CFrame.new(freeCamCFrame and freeCamCFrame.Position or Camera.CFrame.Position)
+            * CFrame.fromEulerAnglesYXZ(freeCamPitch, freeCamYaw, 0)
+
+        -- WASD movement in rotated space
+        local mv = Vector3.zero
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then mv = mv + rotCF.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then mv = mv - rotCF.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then mv = mv - rotCF.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then mv = mv + rotCF.RightVector end
         if UserInputService:IsKeyDown(Enum.KeyCode.E) then mv = mv + Vector3.new(0,1,0) end
         if UserInputService:IsKeyDown(Enum.KeyCode.Q) then mv = mv - Vector3.new(0,1,0) end
-        if mv.Magnitude > 0 then
-            freeCamCFrame = CFrame.new(cf.Position + mv.Unit * spd) * (cf - cf.Position)
-        end
-        -- AC bypass: keep camera logically close to character even while freecam roams
-        -- We move a tiny invisible part to our char to satisfy the server check, but
-        -- the actual rendered camera is the freeCamCFrame.
+
+        local newPos = rotCF.Position
+        if mv.Magnitude > 0 then newPos = newPos + mv.Unit * spd end
+
+        -- AC proximity clamp
         if Toggles.ACBypassCamProximity and Toggles.ACBypassCamProximity.Value then
-            -- Nothing needed client-side; the server check is camera.p vs rootPart.p
-            -- and camera CFrame on server is replicated from our scriptable cam.
-            -- To avoid the >33 stud flag we just keep freecam within 32 studs
             local char = LocalPlayer.Character
             local root = char and (char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart)
-            if root and freeCamCFrame then
-                local dist = (freeCamCFrame.Position - root.Position).Magnitude
-                if dist > 30 then
-                    -- clamp: nudge cam position toward char so it stays within 30 studs
-                    local dir = (freeCamCFrame.Position - root.Position).Unit
-                    freeCamCFrame = CFrame.new(root.Position + dir * 30) * (freeCamCFrame - freeCamCFrame.Position)
-                end
+            if root and (newPos - root.Position).Magnitude > 30 then
+                local dir = (newPos - root.Position).Unit
+                newPos = root.Position + dir * 30
             end
         end
+
+        freeCamCFrame = CFrame.new(newPos) * CFrame.fromEulerAnglesYXZ(freeCamPitch, freeCamYaw, 0)
         Camera.CFrame = freeCamCFrame
+        UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
     elseif not (Toggles.FreeCamEnabled and Toggles.FreeCamEnabled.Value) and freeCamActive then
         deactivateFreeCam()
     end
@@ -2762,14 +2937,26 @@ MenuGroup:AddButton('Unload', function()
         compassClone = nil
     end
 
+    -- Nametag label cleanup
+    pcall(function()
+        if nametagLabel and nametagLabel.Parent then
+            nametagLabel:Destroy(); nametagLabel = nil
+        end
+        local pg = LocalPlayer:FindFirstChild("PlayerGui")
+        if pg then
+            local ch = pg:FindFirstChild("Characterizer")
+            if ch then
+                local nt = ch:FindFirstChild("Nametag", true)
+                if nt then
+                    local clone = nt:FindFirstChild("cumyin_nametaglabel")
+                    if clone then clone:Destroy() end
+                end
+            end
+        end
+    end)
+
     -- FreeCam cleanup
     pcall(deactivateFreeCam)
-
-    -- Rank viewer cleanup
-    if rankViewerClone and rankViewerClone.Parent then
-        pcall(function() rankViewerClone:Destroy() end)
-        rankViewerClone = nil
-    end
 
     -- Airdrop ESP cleanup
     pcall(function() airdropLabel:Remove() end)

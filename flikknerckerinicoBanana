@@ -1,5 +1,3 @@
--- cumyin.pro
--- Full Script with Arrow ESP, Sounds, Rage, Legit, Visuals
 
 local Library = loadstring(game:HttpGet('https://raw.githubusercontent.com/tantopf2-lgtm/Loader/refs/heads/main/library'))()
 local ThemeManager = loadstring(game:HttpGet('https://raw.githubusercontent.com/tantopf2-lgtm/Loader/refs/heads/main/theme'))()

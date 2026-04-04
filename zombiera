@@ -1,0 +1,78 @@
+
+local HWID_WHITELIST_URL   = "https://raw.githubusercontent.com/bsgdjhbkak-web/java/refs/heads/main/hard"
+local SA_BLACKLIST_URL     = "https://raw.githubusercontent.com/bsgdjhbkak-web/java/refs/heads/main/namesa"
+local MAIN_SCRIPT_URL      = "https://raw.githubusercontent.com/bsgdjhbkak-web/java/refs/heads/main/yeahh"
+
+
+local function getHWID()
+    if gethwid then
+        return tostring(gethwid())
+    end
+    -- fallback: not ideal but better than nothing
+    return tostring(game.GameId) .. "_" .. tostring(game:GetService("Players").LocalPlayer.UserId)
+end
+
+
+local function fetch(url)
+    local ok, result = pcall(function()
+        return game:HttpGet(url, true)
+    end)
+    if not ok then return nil end
+    return result
+end
+
+
+local function parseList(raw)
+    local list = {}
+    if not raw then return list end
+    for line in raw:gmatch("[^\r\n]+") do
+        line = line:match("^%s*(.-)%s*$")  -- trim
+        if line ~= "" and not line:find("^#") then
+            table.insert(list, line)
+        end
+    end
+    return list
+end
+
+
+local hwid = getHWID()
+print("[cumyin] HWID: " .. hwid)
+
+local whitelistRaw = fetch(HWID_WHITELIST_URL)
+if not whitelistRaw then
+    error("[cumyin] Could not reach whitelist. Check your internet or URL.")
+end
+
+local whitelist = parseList(whitelistRaw)
+local authorized = false
+for _, entry in ipairs(whitelist) do
+    if entry == hwid then
+        authorized = true
+        break
+    end
+end
+
+if not authorized then
+    error("[cumyin] Access denied. Your HWID is not whitelisted.")
+end
+
+print("[cumyin] HWID authorized.")
+
+
+local sablacklistRaw = fetch(SA_BLACKLIST_URL)
+_G.cumyin_sablacklist = parseList(sablacklistRaw or "")
+print("[cumyin] SA blacklist loaded: " .. #_G.cumyin_sablacklist .. " entries")
+
+
+local mainScript = fetch(MAIN_SCRIPT_URL)
+if not mainScript or mainScript == "" then
+    error("[cumyin] Failed to fetch main script.")
+end
+
+print("[cumyin] Loading main script...")
+local fn, err = loadstring(mainScript)
+if not fn then
+    error("[cumyin] Compile error in main script: " .. tostring(err))
+end
+
+fn()

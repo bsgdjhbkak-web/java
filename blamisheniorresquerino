@@ -1,0 +1,1382 @@
+-- cumyin.pro
+-- Script 11 logic (Silent Aim, ESP, Fly, Gun Mods, etc)
+-- ported into Script 12's LinoriaLib structure
+
+local Library = loadstring(game:HttpGet('https://raw.githubusercontent.com/tantopf2-lgtm/Loader/refs/heads/main/library'))()
+local ThemeManager = loadstring(game:HttpGet('https://raw.githubusercontent.com/tantopf2-lgtm/Loader/refs/heads/main/theme'))()
+local SaveManager = loadstring(game:HttpGet('https://raw.githubusercontent.com/mstudio45/LinoriaLib/main/addons/SaveManager.lua'))()
+local Options = Library.Options
+local Toggles = Library.Toggles
+
+-- ============================================================
+-- SERVICES
+-- ============================================================
+local players           = game:GetService("Players")
+local run_service       = game:GetService("RunService")
+local user_input_service = game:GetService("UserInputService")
+local replicated_storage = game:GetService("ReplicatedStorage")
+local lighting          = game:GetService("Lighting")
+local local_player      = players.LocalPlayer
+local camera            = workspace.CurrentCamera
+
+-- ============================================================
+-- WINDOW
+-- ============================================================
+local Window = Library:CreateWindow({
+    Title        = "cumyin.pro",
+    Center       = true,
+    AutoShow     = true,
+    MenuFadeTime = 0.1,
+    Resizable    = true,
+    ShowCustomCursor = false,
+    NotifySide   = "Bottom",
+    Size         = UDim2.new(0, 800, 0, 600),
+})
+
+-- flickering title
+local baseTitle = string.rep(" ", 87)
+local titleLabel = nil
+task.spawn(function()
+    task.wait(0.5)
+    local function findTitleLabel()
+        local wf = Window.Holder
+        if not wf then return nil end
+        for _, v in ipairs(wf:GetDescendants()) do
+            if v:IsA("TextLabel") and v.Text and v.Text:find("cumyin") then return v end
+        end
+    end
+    titleLabel = findTitleLabel()
+    if titleLabel then
+        titleLabel.RichText = true
+        local visible = true
+        while true do
+            if titleLabel and titleLabel.Parent then
+                local acc = Library.AccentColor
+                local pc = visible and "FFFFFF" or string.format("%02X%02X%02X", acc.R*255, acc.G*255, acc.B*255)
+                titleLabel.Text = baseTitle..'<font color="#FFFFFF">cumyin</font><font color="#'..pc..'">.pro</font>'
+            end
+            visible = not visible
+            task.wait(0.5)
+        end
+    end
+end)
+
+Library:SetWatermark("cumyin.pro | Loaded")
+
+-- ============================================================
+-- TABS
+-- ============================================================
+local Tabs = {
+    Combat      = Window:AddTab("Combat"),
+    ESP         = Window:AddTab("ESP"),
+    Character   = Window:AddTab("Character"),
+    Vehicle     = Window:AddTab("Vehicle"),
+    Misc        = Window:AddTab("Misc"),
+    ["UI Settings"] = Window:AddTab("Configs"),
+}
+
+-- ============================================================
+-- STATE
+-- ============================================================
+local IsUnloading          = false
+local connections          = {}
+local actor_list           = {}
+local actor_history        = {}
+local player_actor_cache   = {}
+local CachedPlayers        = players:GetPlayers()
+local SimulatedActorCache  = {}
+local CurrentSilentAimTarget = nil
+local BulletService        = nil
+local TurretConfigModule   = nil
+local OriginalTurretStats  = {}
+local ActiveTurretMods     = { NoSpread=false, NoRecoil=false, CustomRPM=false, RPMValue=1000 }
+local ModifiedParts        = {}
+local OriginalSizes        = {}
+local PacketHistory        = {}
+local PlayerNameMap        = {}
+local last_pmap_upd        = 0
+local frame_id             = 0
+local last_settings_tick   = 0
+local last_gunmod_tick     = 0
+local f_settings           = {}
+local handled              = {}
+local active_actors        = {}
+local colors_cache         = { enemy=Color3.new(1,0,0), team=Color3.new(0,1,0), npc=Color3.new(1,1,1), zombie=Color3.new(1,0.5,0) }
+local part_cache           = setmetatable({}, {__mode="k"})
+
+-- ESP objects (BoxHandleAdornment)
+local esp_objects   = {}
+local esp_pool      = {}
+local current_esp_folder = nil
+
+-- Fly
+local FlySettings = { Active=false, Speed=50 }
+local MovementObj = nil
+
+-- Character overrides (from CharSettings in script 11)
+local CharSettings = {
+    FlyEnabled    = false,
+    FlySpeed      = 50,
+    InfStamina    = false,
+    WalkSpeedMult = 1,
+    SprintSpeedMult = 1,
+    Spinbot       = false,
+    SpinSpeed     = 50,
+}
+
+-- Status
+local Status = { ClientSvc="...", RepSvc="...", Guns="...", Turrets="...", Storage="...", Vehicles="..." }
+
+-- Services (found async)
+local client_service, replicator_service, inventory_service, vehicle_service
+
+local function add_connection(c) table.insert(connections, c); return c end
+
+-- ============================================================
+-- CACHED GC
+-- ============================================================
+local _getgc_cache = { t=0, v=nil }
+local function cached_getgc(all)
+    local now = tick()
+    if _getgc_cache.v and (now-_getgc_cache.t)<5 then return _getgc_cache.v end
+    local ok, res = pcall(getgc, all); res = ok and res or {}
+    _getgc_cache.v = res; _getgc_cache.t = now; return res
+end
+
+local function cached_search_gc(type_val, options)
+    local res = {}; local keys = options.Keys; local source = cached_getgc(true)
+    for _, v in pairs(source) do
+        if type(v)==type_val then
+            local match = true
+            if keys then
+                for _, k in ipairs(keys) do
+                    if type(v)~="table" or rawget(v,k)==nil then match=false; break end
+                end
+            end
+            if match then table.insert(res, v) end
+        end
+    end
+    return res
+end
+
+-- ============================================================
+-- MODULE FINDER
+-- ============================================================
+local function findModule(name)
+    local RF = game:GetService("ReplicatedFirst")
+    for _, flux_name in ipairs({"Flux_client","Flux/client","Flux"}) do
+        local flux = RF:FindFirstChild(flux_name)
+        if flux then
+            local found = flux:FindFirstChild(name, true)
+            if found then return found end
+        end
+    end
+    local found = RF:FindFirstChild(name, true)
+    if found then return found end
+    local Packages = replicated_storage:FindFirstChild("Packages")
+    local RequireMod = Packages and Packages:FindFirstChild("require")
+    if RequireMod then
+        local ok, Loader = pcall(require, RequireMod)
+        if ok and Loader and Loader._modules and Loader._modules[name] then
+            return Loader._modules[name]
+        end
+    end
+    found = replicated_storage:FindFirstChild(name, true)
+    if found and found:IsA("ModuleScript") then return found end
+    return nil
+end
+
+local function GetServiceRobust(name, keys)
+    local mod = findModule(name)
+    if mod and mod.Parent then
+        local ok, res = pcall(require, mod)
+        if ok then return res end
+    end
+    local results = cached_search_gc("table", {Keys=keys})
+    for _, t in pairs(results) do
+        if t[keys[1]]~=nil then return t end
+    end
+    return nil
+end
+
+-- ============================================================
+-- SERVICE INIT (async)
+-- ============================================================
+task.spawn(function()
+    for i=1,10 do
+        if not replicator_service then
+            local r = GetServiceRobust("ReplicatorService", {"Actors","_lastReplicate"})
+            if r then replicator_service=r; Status.RepSvc="OK" end
+        end
+        if not client_service then
+            local c = GetServiceRobust("ClientService", {"Clients","LocalClient"})
+            if c then client_service=c; Status.ClientSvc="OK" end
+        end
+        if not inventory_service then
+            local inv = GetServiceRobust("InventoryService", {"Inventories","Primary","Load"})
+            if inv then inventory_service=inv; Status.Storage="OK" end
+        end
+        if replicator_service and client_service and inventory_service then break end
+        task.wait(2)
+    end
+    print("✓ Services initialized")
+end)
+
+players.PlayerAdded:Connect(function(p) table.insert(CachedPlayers,p) end)
+players.PlayerRemoving:Connect(function(p)
+    local idx=table.find(CachedPlayers,p)
+    if idx then table.remove(CachedPlayers,idx) end
+    SimulatedActorCache[p]=nil; player_actor_cache[p.UserId]=nil
+end)
+
+-- ============================================================
+-- ACTOR HELPERS
+-- ============================================================
+local function get_actor_from_character(model)
+    if not model then return nil end
+    local p = players:GetPlayerFromCharacter(model)
+    if p then
+        local id=p.UserId; local ent=player_actor_cache[id]
+        if ent then return ent.v end
+    end
+    if type(actor_list)=="table" then
+        for a in pairs(actor_list) do
+            if a.Character==model then return a end
+        end
+    end
+    return nil
+end
+
+local function get_actor_from_player(p)
+    if not p then return nil end
+    local id=p.UserId; local now=tick()
+    local ent=player_actor_cache[id]
+    if ent and (now-ent.t)<0.5 then return ent.v end
+    local actor=nil
+    if replicator_service then
+        local ok,res=pcall(function() return replicator_service:GetFromPlayer(p) end)
+        if ok then actor=res end
+    end
+    if not actor and p.Character then actor=get_actor_from_character(p.Character) end
+    player_actor_cache[id]={v=actor, t=now}
+    return actor
+end
+
+local function is_alive(actor)
+    if not actor then return false end
+    if actor.Alive==false or actor.Downed==true then return false end
+    local model=actor.Character or actor.model
+    if not model or not model.Parent then return false end
+    local hp=model:GetAttribute("Health")
+    if typeof(hp)=="number" and hp<=0 then return false end
+    local hum=model:FindFirstChildOfClass("Humanoid")
+    if hum and hum.Health<=0 then return false end
+    return true
+end
+
+local function update_cached_parts(actor)
+    local model=actor.Character
+    if model and model.Parent and model:FindFirstChild("Head") then
+        actor._CachedParts={
+            Head=model:FindFirstChild("Head"),
+            UpperTorso=model:FindFirstChild("UpperTorso") or model:FindFirstChild("Torso"),
+            Primary=model.PrimaryPart or model:FindFirstChild("Head")
+        }
+    else actor._CachedParts=nil end
+    actor._LastPartsUpdate=tick()
+end
+
+local function register_actor(actor)
+    if not actor or actor_list[actor] then return end
+    actor_list[actor]=true
+    actor._Category=actor.Zombie and "Zombie" or (actor.Owner and "Player" or "NPC")
+    update_cached_parts(actor)
+end
+
+local function get_part(model, name)
+    if not model then return nil end
+    if not part_cache[model] then part_cache[model]={} end
+    local cached=part_cache[model][name]
+    if cached and cached.Parent==model then return cached end
+    local p=model:FindFirstChild(name)
+    if p then part_cache[model][name]=p end
+    return p
+end
+
+local function get_team(player)
+    if not client_service then return nil end
+    local actor=get_actor_from_player(player)
+    if actor then
+        if actor._Squad and (tick()-(actor._SquadTick or 0)<5) then return actor._Squad end
+        local client=client_service:GetClientFromName(player.Name)
+        if client then actor._Squad=client.Squad; actor._SquadTick=tick(); return actor._Squad end
+    else
+        local client=client_service:GetClientFromName(player.Name)
+        return client and client.Squad
+    end
+    return nil
+end
+
+-- ============================================================
+-- WALL CHECK
+-- ============================================================
+local wall_params=RaycastParams.new()
+wall_params.FilterType=Enum.RaycastFilterType.Exclude
+wall_params.IgnoreWater=true
+local visibility_cache={}
+local filter_table={camera, workspace.CurrentCamera, nil, nil}
+
+local function is_visible(targetPart)
+    if not targetPart then return false end
+    if not (Toggles.WallCheck and Toggles.WallCheck.Value) then return true end
+    local now=os.clock()
+    if visibility_cache[targetPart] and (now-visibility_cache[targetPart].last<0.1) then
+        return visibility_cache[targetPart].result
+    end
+    local camPos=camera.CFrame.Position
+    local targetChar=targetPart.Parent
+    local myChar=local_player.Character
+    filter_table[3]=myChar; filter_table[4]=targetChar
+    wall_params.FilterDescendantsInstances=filter_table
+    local function check_ray(origin, targetPos)
+        local dir=targetPos-origin
+        local res=workspace:Raycast(origin, dir, wall_params)
+        if res then
+            local hit=res.Instance
+            if hit:IsDescendantOf(targetPart.Parent) then return true end
+            local is_penetrable=hit.Transparency>0.5 or not hit.CanCollide
+            if is_penetrable then return check_ray(res.Position+dir.Unit*0.05, targetPos) end
+            return false
+        end
+        return true
+    end
+    local is_vis=check_ray(camPos, targetPart.Position)
+    visibility_cache[targetPart]={last=now, result=is_vis}
+    return is_vis
+end
+
+-- ============================================================
+-- FOV CIRCLE (ScreenGui based, no Drawing API)
+-- ============================================================
+local function CreateFOV()
+    local Screen=Instance.new("ScreenGui")
+    Screen.Name="cumyin_FOV_UI"
+    if gethui then Screen.Parent=gethui() else Screen.Parent=game:GetService("CoreGui") end
+    local Circle=Instance.new("Frame")
+    Circle.Name="FOV"
+    Circle.Size=UDim2.new(0,800,0,800)
+    Circle.Position=UDim2.new(0.5,0,0.5,0)
+    Circle.AnchorPoint=Vector2.new(0.5,0.5)
+    Circle.BackgroundTransparency=1
+    Circle.Parent=Screen
+    local Stroke=Instance.new("UIStroke")
+    Stroke.Color=Color3.fromRGB(255,255,255)
+    Stroke.Thickness=1
+    Stroke.Transparency=0.5
+    Stroke.Parent=Circle
+    Instance.new("UICorner", Circle).CornerRadius=UDim.new(1,0)
+    getgenv().cumyin_FOV_UI={Gui=Screen, Circle=Circle, Stroke=Stroke}
+    return getgenv().cumyin_FOV_UI
+end
+
+if getgenv().cumyin_FOV_UI then
+    pcall(function() getgenv().cumyin_FOV_UI.Gui:Destroy() end)
+end
+local FOV_Data=CreateFOV()
+
+add_connection(run_service.RenderStepped:Connect(function()
+    local radius=(Options.FOVRadius and Options.FOVRadius.Value or 400)*2
+    local visible=(Toggles.ShowFOV and Toggles.ShowFOV.Value) and (Toggles.SilentAimEnabled and Toggles.SilentAimEnabled.Value)
+    FOV_Data.Circle.Size=UDim2.new(0,radius,0,radius)
+    FOV_Data.Gui.Enabled=visible or false
+end))
+
+-- ============================================================
+-- SILENT AIM
+-- ============================================================
+local function get_bullet_service()
+    if BulletService then return BulletService end
+    local mod=findModule("BulletService")
+    if mod then local ok,res=pcall(require,mod); if ok then BulletService=res end end
+    return BulletService
+end
+
+local function scan_for_best_target()
+    if not (Toggles.SilentAimEnabled and Toggles.SilentAimEnabled.Value) then
+        CurrentSilentAimTarget=nil; return
+    end
+    local maxFOVSqr=(Options.FOVRadius and Options.FOVRadius.Value or 400)^2
+    local screenCenter=camera.ViewportSize/2
+    local targetName=(Options.TargetPart and Options.TargetPart.Value) or "Head"
+    local camPos=camera.CFrame.Position
+    local lookDir=camera.CFrame.LookVector
+    local my_team=get_team(local_player)
+    local bestPart=nil; local minFOVDist=math.huge
+
+    local function evaluate(actor, id)
+        if not is_alive(actor) then return end
+        local model=actor.Character
+        if not model or model==local_player.Character then return end
+        local cache=actor._CachedParts
+        local primary=(cache and cache.Primary) or model.PrimaryPart or get_part(model,"Head")
+        if not primary then return end
+        local offset=primary.Position-camPos
+        if offset:Dot(lookDir)<0 or offset:Dot(offset)>2250000 then return end
+        if Toggles.TeamCheck and Toggles.TeamCheck.Value then
+            local tp=(typeof(id)=="number" and players:GetPlayerByUserId(id)) or actor.Owner
+            if tp and get_team(tp)==my_team then return end
+        end
+        local part=(cache and cache[targetName]) or get_part(model,targetName) or (cache and cache.Head) or primary
+        if not part then return end
+        local pos,onScreen=camera:WorldToViewportPoint(part.Position)
+        if onScreen then
+            local fovDist=(Vector2.new(pos.X,pos.Y)-screenCenter):Dot(Vector2.new(pos.X,pos.Y)-screenCenter)
+            if fovDist<maxFOVSqr and fovDist<minFOVDist and is_visible(part) then
+                minFOVDist=fovDist; bestPart=part
+            end
+        end
+    end
+
+    for _,p in ipairs(players:GetPlayers()) do
+        if p~=local_player then
+            local a=get_actor_from_player(p)
+            if a then evaluate(a, p.UserId) end
+        end
+    end
+    for a in pairs(actor_list) do
+        if not (a.Owner and a.Owner:IsA("Player")) then evaluate(a,a) end
+    end
+    CurrentSilentAimTarget=bestPart
+end
+
+-- ============================================================
+-- GUN MODS
+-- ============================================================
+local function ApplyGunMods(firearm)
+    if not firearm or not firearm._firearm or not firearm._firearm.Tune then return end
+    local tune=firearm._firearm.Tune
+    local caliber=firearm._caliber
+    if not tune._Originals then
+        tune._Originals={
+            Recoil_X=tune.Recoil_X, Recoil_Z=tune.Recoil_Z,
+            Recoil_Camera=tune.Recoil_Camera, RecoilForce_Tap=tune.RecoilForce_Tap,
+            RecoilForce_Impulse=tune.RecoilForce_Impulse, Recoil_Range=tune.Recoil_Range,
+            Recoil_KickBack=tune.Recoil_KickBack, Barrel_Spread=tune.Barrel_Spread,
+            Spread=tune.Spread, RPM=tune.RPM, Firemodes=tune.Firemodes,
+            Bolt=tune.Bolt, Bolt_Action_Pause=tune.Bolt_Action_Pause,
+            Bolt_Action_NoPause=tune.Bolt_Action_NoPause,
+        }
+    end
+    if caliber and not caliber._Originals then
+        caliber._Originals={Spread=caliber.Spread, RecoilForce=caliber.RecoilForce}
+    end
+    local noRecoil = Toggles.NoRecoil and Toggles.NoRecoil.Value
+    local noSpread = Toggles.NoSpread and Toggles.NoSpread.Value
+    local customRPM = Toggles.CustomRPM and Toggles.CustomRPM.Value
+    local unlockModes = Toggles.UnlockModes and Toggles.UnlockModes.Value
+
+    if noRecoil then
+        if tune.Recoil_X~=nil then tune.Recoil_X=0 end
+        if tune.Recoil_Z~=nil then tune.Recoil_Z=0 end
+        if tune.Recoil_Camera~=nil then tune.Recoil_Camera=0 end
+        if tune.RecoilForce_Tap~=nil then tune.RecoilForce_Tap=0 end
+        if tune.RecoilForce_Impulse~=nil then tune.RecoilForce_Impulse=0 end
+        if tune.Recoil_Range~=nil then tune.Recoil_Range=Vector2.new(0,0) end
+        if tune.Recoil_KickBack~=nil then tune.Recoil_KickBack=0 end
+        if tune.Bolt~=nil then tune.Bolt=0 end
+        if tune.Bolt_Action_Pause~=nil then tune.Bolt_Action_Pause=0 end
+        if tune.Bolt_Action_NoPause~=nil then tune.Bolt_Action_NoPause=true end
+        if caliber then caliber.RecoilForce=0 end
+    else
+        local o=tune._Originals
+        tune.Recoil_X=o.Recoil_X; tune.Recoil_Z=o.Recoil_Z
+        tune.Recoil_Camera=o.Recoil_Camera; tune.RecoilForce_Tap=o.RecoilForce_Tap
+        tune.RecoilForce_Impulse=o.RecoilForce_Impulse; tune.Recoil_Range=o.Recoil_Range
+        tune.Recoil_KickBack=o.Recoil_KickBack; tune.Bolt=o.Bolt
+        tune.Bolt_Action_Pause=o.Bolt_Action_Pause; tune.Bolt_Action_NoPause=o.Bolt_Action_NoPause
+        if caliber and caliber._Originals then caliber.RecoilForce=caliber._Originals.RecoilForce end
+    end
+
+    if noSpread then
+        if tune.Barrel_Spread~=nil then tune.Barrel_Spread=0 end
+        if tune.Spread~=nil then tune.Spread=0 end
+        if caliber then caliber.Spread=0 end
+    else
+        tune.Barrel_Spread=tune._Originals.Barrel_Spread
+        if tune.Spread~=nil then tune.Spread=tune._Originals.Spread end
+        if caliber and caliber._Originals then caliber.Spread=caliber._Originals.Spread end
+    end
+
+    if customRPM then
+        local v=tonumber(Options.RPMValue and Options.RPMValue.Value)
+        if v then tune.RPM=v end
+    else tune.RPM=tune._Originals.RPM end
+
+    if unlockModes then
+        tune.Firemodes={1,2,3}
+    else
+        tune.Firemodes=tune._Originals.Firemodes
+    end
+end
+
+-- ============================================================
+-- TURRET MODS
+-- ============================================================
+local function GetTurretConfig()
+    if not TurretConfigModule then
+        local mod=findModule("Turrets")
+        if mod then local ok,r=pcall(require,mod); if ok then TurretConfigModule=r end end
+    end
+    return TurretConfigModule
+end
+
+local function ApplyTurretMods()
+    local configs=GetTurretConfig()
+    if not configs then return end
+    for name, stats in pairs(configs) do
+        if type(stats)=="table" then
+            local function ens(s,v)
+                if not OriginalTurretStats[name] then OriginalTurretStats[name]={} end
+                if OriginalTurretStats[name][s]==nil then OriginalTurretStats[name][s]=v end
+            end
+            if stats.Barrel_Spread then ens("Barrel_Spread",stats.Barrel_Spread); stats.Barrel_Spread=ActiveTurretMods.NoSpread and 0 or OriginalTurretStats[name].Barrel_Spread end
+            if stats.Recoil_Base then ens("Recoil_Base",stats.Recoil_Base); stats.Recoil_Base=ActiveTurretMods.NoRecoil and Vector2.new(0,0) or OriginalTurretStats[name].Recoil_Base end
+            if stats.Recoil_Range then ens("Recoil_Range",stats.Recoil_Range); stats.Recoil_Range=ActiveTurretMods.NoRecoil and Vector2.new(0,0) or OriginalTurretStats[name].Recoil_Range end
+            if stats.RPM then ens("RPM",stats.RPM); stats.RPM=ActiveTurretMods.CustomRPM and ActiveTurretMods.RPMValue or OriginalTurretStats[name].RPM end
+        end
+    end
+end
+
+-- ============================================================
+-- FIREARM HOOK
+-- ============================================================
+task.spawn(function()
+    local FirearmModule=findModule("FirearmInventory")
+    local ReplicatorModule=findModule("FirearmInventoryReplicator")
+    if FirearmModule then
+        local FirearmClass=require(FirearmModule)
+        if not getgenv().cumyin_OldGetMuzzle then getgenv().cumyin_OldGetMuzzle=FirearmClass.GetMuzzleCFrame end
+        if not getgenv().cumyin_OldEquip then getgenv().cumyin_OldEquip=FirearmClass.Equip end
+        local OldGetMuzzle=getgenv().cumyin_OldGetMuzzle
+        local OldEquip=getgenv().cumyin_OldEquip
+
+        FirearmClass.GetMuzzleCFrame=function(self,...)
+            local originCF,hitPoint,castResult=OldGetMuzzle(self,...)
+            if not getgenv()._SAInternal and (Toggles.SilentAimEnabled and Toggles.SilentAimEnabled.Value) and originCF then
+                local targetPart=CurrentSilentAimTarget
+                if targetPart and targetPart.Parent then
+                    local targetPos=targetPart.Position
+                    -- Prediction
+                    if Toggles.Prediction and Toggles.Prediction.Value then
+                        local bs=get_bullet_service()
+                        if bs and bs.GetInfo then
+                            local tune=self._firearm and self._firearm.Tune
+                            local mv=tune and bs:GetInfo(tune.CALIBER or tune.Caliber, tune.BARREL or tune.Barrel)
+                            if mv and mv>0 then
+                                local dist=(targetPos-originCF.Position).Magnitude
+                                local travelTime=dist/mv
+                                local model=targetPart.Parent
+                                local vel=Vector3.new(0,0,0)
+                                local actor=get_actor_from_character(model)
+                                if actor and actor.Direction and actor.Direction.Magnitude>0 then
+                                    vel=Vector3.new(actor.Direction.X,0,actor.Direction.Y)*60
+                                elseif model:FindFirstChild("HumanoidRootPart") then
+                                    vel=model.HumanoidRootPart.Velocity
+                                end
+                                if vel.Magnitude>0.1 then targetPos=targetPos+(vel*travelTime) end
+                                -- Bullet drop
+                                if Toggles.BulletDrop and Toggles.BulletDrop.Value then
+                                    targetPos=targetPos+Vector3.new(0,0.5*32.2*(travelTime^2),0)
+                                end
+                            end
+                        end
+                    end
+                    originCF=CFrame.lookAt(originCF.Position, targetPos)
+                end
+            end
+            return originCF, hitPoint, castResult
+        end
+
+        FirearmClass.Equip=function(self,...)
+            getgenv().cumyin_CurrentFirearm=self
+            ApplyGunMods(self)
+            return OldEquip(self,...)
+        end
+        print("✓ Firearm hooked")
+    end
+
+    -- Turret silent aim
+    task.spawn(function()
+        local TurretMod=findModule("TurretController")
+        if TurretMod then
+            local ok,TC=pcall(require,TurretMod)
+            if ok and TC and TC.GetMuzzleCFrame then
+                if not getgenv().cumyin_OldTurretMuzzle then
+                    getgenv().cumyin_OldTurretMuzzle=TC.GetMuzzleCFrame
+                end
+                TC.GetMuzzleCFrame=function(self,...)
+                    local originCF=getgenv().cumyin_OldTurretMuzzle(self,...)
+                    if not getgenv()._SAInternal and (Toggles.SilentAimEnabled and Toggles.SilentAimEnabled.Value) and CurrentSilentAimTarget and originCF then
+                        if CurrentSilentAimTarget.Parent then
+                            originCF=CFrame.lookAt(originCF.Position, CurrentSilentAimTarget.Position)
+                        end
+                    end
+                    return originCF
+                end
+                print("✓ Turret SA hooked")
+            end
+        end
+    end)
+
+    if ReplicatorModule then
+        local RC=require(ReplicatorModule)
+        if not getgenv().cumyin_OldRepDischarge then getgenv().cumyin_OldRepDischarge=RC.Discharge end
+        local ORD=getgenv().cumyin_OldRepDischarge
+        RC.Discharge=function(self,...) ApplyGunMods(self); return ORD(self,...) end
+        print("✓ Replicator hooked")
+    end
+end)
+
+-- Recoiler hook
+task.spawn(function()
+    local rf=game:GetService("ReplicatedFirst")
+    local flux=rf:FindFirstChild("Flux_client")
+    if flux then
+        local svc=flux:FindFirstChild("Services")
+        local vm=svc and svc:FindFirstChild("ViewmodelService")
+        local rm=vm and vm:FindFirstChild("Recoiler")
+        if rm then
+            local Recoiler=require(rm)
+            local oI=Recoiler.Impulse; local oVA=Recoiler.GetViewmodelAdjustment; local oCA=Recoiler.GetCameraAdjustment
+            Recoiler.Impulse=function(self,...) if Toggles.NoRecoil and Toggles.NoRecoil.Value then return end return oI(self,...) end
+            Recoiler.GetViewmodelAdjustment=function(self,...) if Toggles.NoRecoil and Toggles.NoRecoil.Value then return CFrame.new() end return oVA(self,...) end
+            Recoiler.GetCameraAdjustment=function(self,...) if Toggles.NoRecoil and Toggles.NoRecoil.Value then return CFrame.Angles(0,0,0),0 end return oCA(self,...) end
+            print("✓ Recoiler hooked")
+        end
+    end
+end)
+
+-- ============================================================
+-- CHARACTER CONTROLLER HOOK (Fly, Stamina, Speed)
+-- ============================================================
+task.spawn(function()
+    local CharacterController=nil
+    while true do
+        if not CharacterController then
+            local mod=findModule("CharacterController")
+            if mod then
+                local ok,result=pcall(require,mod)
+                if ok and result and result.Update then
+                    CharacterController=result
+                    if not getgenv().cumyin_OldCharUpdate then
+                        getgenv().cumyin_OldCharUpdate=CharacterController.Update
+                    end
+                    CharacterController.Update=function(self,inputVector,deltaTime)
+                        if not self or not self._localActor then
+                            return getgenv().cumyin_OldCharUpdate(self,inputVector,deltaTime)
+                        end
+                        if CharSettings.InfStamina then
+                            self._exhaustStart=tick(); self._exhausted=tick()+1
+                        end
+                        local walkMult=CharSettings.WalkSpeedMult or 1
+                        local sprintMult=CharSettings.SprintSpeedMult or 1
+                        local activeMult=self.IsSprinting and sprintMult or walkMult
+                        local baseWeight=self._weightMulti or 1
+                        self._weightMulti=baseWeight*activeMult
+
+                        if CharSettings.FlyEnabled then
+                            self.VelocityGravity=0; self.HeightState=0; self.IsGrounded=true
+                            local camCF=camera.CFrame; local dir=Vector3.new(0,0,0)
+                            if inputVector.Magnitude>0 then
+                                dir=dir+(camCF.LookVector*-inputVector.Y)+(camCF.RightVector*inputVector.X)
+                            end
+                            if user_input_service:IsKeyDown(Enum.KeyCode.Space) then dir=dir+Vector3.new(0,1,0) end
+                            if user_input_service:IsKeyDown(Enum.KeyCode.LeftControl) then dir=dir-Vector3.new(0,1,0) end
+                            if dir.Magnitude>0 then
+                                local spd=CharSettings.FlySpeed or 50
+                                local sprint=user_input_service:IsKeyDown(Enum.KeyCode.LeftShift) and 2.5 or 1
+                                local nextPos=self._position+(dir.Unit*spd*sprint*deltaTime)
+                                self._position=nextPos; self._lastSafePosition=nextPos
+                                if self._localActor then
+                                    self._localActor.SimulatedPosition=nextPos
+                                    self._localActor.Grounded=true; self._localActor.Sprinting=false
+                                end
+                            end
+                            local char=self._localActor and (self._localActor.Character or self._localActor._model)
+                            if char then
+                                local root=char:FindFirstChild("Root") or char.PrimaryPart
+                                if root then
+                                    root.Velocity=Vector3.new(0,0,0)
+                                    root.AssemblyLinearVelocity=Vector3.new(0,0,0)
+                                    root.CFrame=CFrame.new(self._position, self._position+camCF.LookVector)
+                                end
+                            end
+                            self._weightMulti=baseWeight; return
+                        end
+                        local res=getgenv().cumyin_OldCharUpdate(self,inputVector,deltaTime)
+                        self._weightMulti=baseWeight
+                        return res
+                    end
+
+                    if not getgenv().cumyin_OldCharExhaust then
+                        getgenv().cumyin_OldCharExhaust=CharacterController._exhaust
+                    end
+                    CharacterController._exhaust=function(self,...)
+                        if CharSettings.InfStamina then return true end
+                        return getgenv().cumyin_OldCharExhaust(self,...)
+                    end
+                    print("✓ CharacterController hooked")
+                    break
+                end
+            end
+        end
+        task.wait(2)
+        if IsUnloading then break end
+    end
+end)
+
+-- ============================================================
+-- ESP (BoxHandleAdornment)
+-- ============================================================
+local function GetESPFolder()
+    if current_esp_folder and current_esp_folder.Parent then return current_esp_folder end
+    current_esp_folder=nil
+    for _,o in pairs(esp_pool) do if o.box then o.box:Destroy() end end; table.clear(esp_pool)
+    for _,o in pairs(esp_objects) do if o.box then o.box:Destroy() end end; table.clear(esp_objects)
+    local f=Instance.new("Folder"); f.Name="cumyin_ESP"
+    local done=false
+    if gethui then pcall(function() f.Parent=gethui(); done=true end) end
+    if not done then pcall(function() f.Parent=game:GetService("CoreGui"); done=true end) end
+    if not done then
+        local pg=local_player:FindFirstChild("PlayerGui")
+        if pg then f.Parent=pg end
+    end
+    current_esp_folder=f; return f
+end
+
+local function create_esp_group()
+    local box=Instance.new("BoxHandleAdornment")
+    box.Name="ESP_Box"; box.AlwaysOnTop=true; box.ZIndex=5; box.Transparency=0
+    local folder=GetESPFolder()
+    if folder then box.Parent=folder end
+    return {box=box}
+end
+
+local function remove_esp(id)
+    local objs=esp_objects[id]
+    if objs then
+        if objs.box then objs.box.Adornee=nil; objs.box.Visible=false end
+        table.insert(esp_pool, objs); esp_objects[id]=nil
+    end
+end
+
+local function init_esp_entry(id)
+    if esp_objects[id] then return end
+    local group=nil
+    while #esp_pool>0 do
+        local g=table.remove(esp_pool)
+        if g and g.box and g.box.Parent then group=g; break
+        elseif g and g.box then g.box:Destroy() end
+    end
+    if not group then group=create_esp_group() end
+    if group then if group.box then group.box.Visible=false end; esp_objects[id]=group end
+end
+
+local function render_esp(id, actor, color, is_visible_toggle, maxDistSqr, dist_sqr)
+    if not is_visible_toggle then if esp_objects[id] then remove_esp(id) end; return end
+    local model=actor.Character
+    if not model or not model.Parent or not is_alive(actor) then
+        if esp_objects[id] then remove_esp(id) end; return
+    end
+    if dist_sqr>(maxDistSqr or 4000000) then if esp_objects[id] then remove_esp(id) end; return end
+    if not esp_objects[id] then init_esp_entry(id) end
+    local objs=esp_objects[id]
+    if not objs then return end
+    local box=objs.box
+    if not box or not box.Parent then esp_objects[id]=nil; return end
+    local root=model:FindFirstChild("Head") or model.PrimaryPart
+    if root then
+        box.Visible=true
+        if box.Adornee~=root then box.Adornee=root end
+        local targetSize=root.Size*1.2
+        if (box.Size-targetSize).Magnitude>0.01 then box.Size=targetSize end
+        box.AlwaysOnTop=true; box.ZIndex=5
+        if objs._lastC~=color then box.Color3=color; objs._lastC=color end
+    else
+        box.Visible=false
+    end
+end
+
+-- ============================================================
+-- HITBOX EXPANDER with Yellow Highlight
+-- ============================================================
+
+local mt = getrawmetatable(game)
+local old_index = mt.__index
+setreadonly(mt, false)
+
+mt.__index = newcclosure(function(t, k)
+    if k == "Size" and ModifiedParts[t] then
+        return OriginalSizes[t] or Vector3.new(1, 1, 1)
+    end
+    return old_index(t, k)
+end)
+setreadonly(mt, true)
+
+local hitboxHighlights = {}
+
+local function addHitboxHighlight(part)
+    if not part or hitboxHighlights[part] then return end
+    
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "HitboxHighlight"
+    highlight.FillColor = Color3.fromRGB(255, 255, 0) -- Yellow
+    highlight.OutlineColor = Color3.fromRGB(255, 200, 0)
+    highlight.FillTransparency = 0.7
+    highlight.OutlineTransparency = 0.3
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.Parent = part.Parent or part
+    
+    hitboxHighlights[part] = highlight
+end
+
+local function removeHitboxHighlight(part)
+    if hitboxHighlights[part] then
+        pcall(function() hitboxHighlights[part]:Destroy() end)
+        hitboxHighlights[part] = nil
+    end
+end
+
+local function UpdateHitboxes()
+    if not (Toggles.HitboxExpander and Toggles.HitboxExpander.Value) then
+        -- Remove all highlights when disabled
+        for part, hl in pairs(hitboxHighlights) do
+            pcall(function() hl:Destroy() end)
+        end
+        table.clear(hitboxHighlights)
+        
+        -- Restore all hitbox sizes
+        for part in pairs(ModifiedParts) do
+            if part and part.Parent then
+                part.Size = OriginalSizes[part]
+                part.Transparency = 0
+                part.CanCollide = true
+            end
+            ModifiedParts[part] = nil
+        end
+        return
+    end
+    
+    local sizeVal = (Options.HitboxSize and Options.HitboxSize.Value) or 4
+    local expansion = Vector3.new(sizeVal, sizeVal, sizeVal)
+    local camPos = camera.CFrame.Position
+    local myTeam = get_team(local_player)
+    local teamCheck = Toggles.TeamCheck and Toggles.TeamCheck.Value
+
+    local function expand(actor)
+        local cache = actor._CachedParts
+        local head = cache and cache.Head
+        
+        if not is_alive(actor) then
+            if head and ModifiedParts[head] then
+                head.Size = OriginalSizes[head]
+                head.Transparency = 0
+                head.CanCollide = true
+                ModifiedParts[head] = nil
+                removeHitboxHighlight(head)
+            end
+            return
+        end
+        
+        if actor.Owner == local_player then return end
+        
+        -- Don't expand teammates if team check is on
+        if teamCheck and actor.Owner and get_team(actor.Owner) == myTeam then
+            if head and ModifiedParts[head] then
+                head.Size = OriginalSizes[head]
+                head.Transparency = 0
+                head.CanCollide = true
+                ModifiedParts[head] = nil
+                removeHitboxHighlight(head)
+            end
+            return
+        end
+        
+        if head and head:IsA("BasePart") then
+            local offset = head.Position - camPos
+            local distSqr = offset:Dot(offset)
+            
+            if distSqr < 25 or distSqr > 1000000 then
+                if ModifiedParts[head] then
+                    head.Size = OriginalSizes[head]
+                    head.Transparency = 0
+                    head.CanCollide = true
+                    ModifiedParts[head] = nil
+                    removeHitboxHighlight(head)
+                end
+                return
+            end
+            
+            if not ModifiedParts[head] then
+                ModifiedParts[head] = true
+                OriginalSizes[head] = head.Size
+                head.CanCollide = false
+                head.Transparency = 0.4
+                
+                -- Add yellow highlight
+                addHitboxHighlight(head)
+            end
+            if head.Size ~= expansion then head.Size = expansion end
+            if head.CanCollide then head.CanCollide = false end
+        end
+    end
+    
+    for _, p in ipairs(players:GetPlayers()) do
+        local actor = get_actor_from_player(p)
+        if actor then expand(actor) end
+    end
+    for actor in pairs(actor_list) do expand(actor) end
+end
+
+task.spawn(function()
+    while not IsUnloading do 
+        pcall(UpdateHitboxes)
+        task.wait(1)
+    end
+end)
+
+-- ============================================================
+-- LIGHTING (Constant Enforcement)
+-- ============================================================
+
+local function update_lighting()
+    if Toggles.AlwaysDay and Toggles.AlwaysDay.Value then
+        lighting.ClockTime = 12
+        -- Also lock the time of day to prevent game from changing it
+        lighting:SetMinutesAfterMidnight(720) -- 12:00 PM
+    end
+    
+    if Toggles.NoFog and Toggles.NoFog.Value then
+        lighting.FogEnd = 99999
+        lighting.FogStart = 99999
+        local atm = lighting:FindFirstChildOfClass("Atmosphere")
+        if atm then
+            atm.Density = 0
+            atm.Haze = 0
+        end
+        lighting.Brightness = 2
+        lighting.GlobalShadows = false
+        lighting.FogColor = Color3.fromRGB(0, 0, 0)
+    end
+end
+
+-- Force update every frame
+add_connection(run_service.RenderStepped:Connect(function()
+    update_lighting()
+end))
+
+-- Also keep atmosphere in check
+task.spawn(function()
+    while not IsUnloading do
+        if Toggles.NoFog and Toggles.NoFog.Value then
+            local atm = lighting:FindFirstChildOfClass("Atmosphere")
+            if atm then
+                atm.Density = 0
+                atm.Haze = 0
+            end
+            lighting.FogEnd = 99999
+            lighting.FogStart = 99999
+        end
+        if Toggles.AlwaysDay and Toggles.AlwaysDay.Value then
+            lighting.ClockTime = 12
+        end
+        task.wait(0.1) -- Check every 0.1 seconds
+    end
+end)
+
+-- ============================================================
+-- ACTOR REGISTER LOOP
+-- ============================================================
+task.spawn(function()
+    while not IsUnloading do
+        pcall(function()
+            local actors=replicator_service and (replicator_service.Actors or replicator_service._actors)
+            if actors then
+                for _,actor in pairs(actors) do
+                    if not actor_list[actor] then register_actor(actor) end
+                end
+            end
+        end)
+        task.wait(1)
+    end
+end)
+
+-- ============================================================
+-- MAIN RENDER LOOP
+-- ============================================================
+add_connection(run_service.RenderStepped:Connect(function()
+    frame_id=frame_id+1
+    local now=tick()
+    local camPos=camera.CFrame.Position
+
+    -- Update PlayerMap
+    if now-last_pmap_upd>0.5 then
+        local pm={}; for _,p in ipairs(players:GetPlayers()) do pm[p.Name]=p end
+        PlayerNameMap=pm; last_pmap_upd=now
+    end
+
+    -- Refresh settings 10Hz
+    if now-last_settings_tick>0.1 then
+        local maxDist=(Options.MaxESPDistance and Options.MaxESPDistance.Value) or 2000
+        f_settings.ESP       = Toggles.ESPEnabled and Toggles.ESPEnabled.Value
+        f_settings.SA        = Toggles.SilentAimEnabled and Toggles.SilentAimEnabled.Value
+        f_settings.Players   = Toggles.ShowPlayers and Toggles.ShowPlayers.Value
+        f_settings.NPCs      = Toggles.ShowNPCs and Toggles.ShowNPCs.Value
+        f_settings.Zombies   = Toggles.ShowZombies and Toggles.ShowZombies.Value
+        f_settings.Teammates = Toggles.ShowTeammates and Toggles.ShowTeammates.Value
+        f_settings.MaxDistSqr= maxDist*maxDist
+        f_settings.TeamCheck = Toggles.TeamCheck and Toggles.TeamCheck.Value
+        f_settings.AutoReload= Toggles.AutoReload and Toggles.AutoReload.Value
+        colors_cache.enemy   = Options.EnemyColor and Options.EnemyColor.Value or Color3.new(1,0,0)
+        colors_cache.team    = Options.TeamColor and Options.TeamColor.Value or Color3.new(0,1,0)
+        colors_cache.npc     = Options.NPCColor and Options.NPCColor.Value or Color3.new(1,1,1)
+        colors_cache.zombie  = Options.ZombieColor and Options.ZombieColor.Value or Color3.new(1,0.5,0)
+        last_settings_tick=now
+    end
+
+    -- Auto reload
+    if f_settings.AutoReload and getgenv().cumyin_CurrentFirearm and (now-last_gunmod_tick>0.2) then
+        local w=getgenv().cumyin_CurrentFirearm
+        if ((w._mag and (w._mag.Capacity or 0)==0) or not w._mag) and not w._reloading then
+            local mags=w:_getMags(); if #mags>0 then w:_reload() end
+        end
+        last_gunmod_tick=now
+    end
+
+    -- Build active actors
+    table.clear(active_actors); table.clear(handled)
+    local my_team=get_team(local_player)
+
+    for _,p in ipairs(CachedPlayers) do
+        if p~=local_player then
+            local actor=get_actor_from_player(p)
+            if not actor and p.Character then
+                if SimulatedActorCache[p] and SimulatedActorCache[p].Character==p.Character then
+                    actor=SimulatedActorCache[p]
+                else
+                    local root=p.Character.PrimaryPart or p.Character:FindFirstChild("Head")
+                    if root then
+                        actor={Character=p.Character, Owner=p, Name=p.Name, Alive=true, _isSimulated=true,
+                               _CachedParts={Head=p.Character:FindFirstChild("Head"),
+                               UpperTorso=p.Character:FindFirstChild("UpperTorso") or p.Character:FindFirstChild("Torso"),
+                               Primary=root}}
+                        SimulatedActorCache[p]=actor
+                    end
+                end
+            end
+            if actor then active_actors[p.UserId]={actor=actor, name=p.Name} end
+        end
+    end
+
+    for actor in pairs(actor_list) do
+        if not IsUnloading then
+            local model=actor.Character
+            if not model or not model.Parent then actor_list[actor]=nil; continue end
+            if actor.Owner and actor.Owner~=local_player then
+                if not active_actors[actor.Owner.UserId] then
+                    active_actors[actor.Owner.UserId]={actor=actor, name=actor.Owner.Name}
+                end
+            elseif not actor.Owner then
+                local fp=PlayerNameMap[model.Name]
+                if fp and fp~=local_player then
+                    actor.Owner=fp
+                    if not active_actors[fp.UserId] then
+                        active_actors[fp.UserId]={actor=actor, name=fp.Name}
+                    end
+                else
+                    active_actors[actor]={actor=actor, name=actor.Zombie and "Zombie" or "NPC"}
+                end
+            end
+        end
+    end
+
+    -- SA scan + ESP render
+    local sa_bestPart=nil; local sa_minFOVDist=math.huge
+    local sa_maxFOVSqr=(Options.FOVRadius and Options.FOVRadius.Value or 400)^2
+    local sa_screenCenter=camera.ViewportSize/2
+    local sa_targetName=(Options.TargetPart and Options.TargetPart.Value) or "Head"
+    local lookDir=camera.CFrame.LookVector
+
+    for id, data in pairs(active_actors) do
+        local ac=data.actor
+        if not ac.Owner and typeof(id)=="number" then ac.Owner=players:GetPlayerByUserId(id) end
+        if ac.Zombie or data.name=="Zombie" then ac._Category="Zombie"
+        elseif ac.Owner or typeof(id)=="number" then ac._Category="Player"
+        else ac._Category="NPC" end
+
+        if not ac._CachedParts or (now-(ac._LastPartsUpdate or 0)>2) then update_cached_parts(ac) end
+
+        local primary=ac._CachedParts and ac._CachedParts.Primary
+        if not primary or not primary.Parent then continue end
+
+        local offset=primary.Position-camPos
+        local dist_sqr=offset:Dot(offset)
+
+        -- ESP
+        if f_settings.ESP then
+            local is_teammate=false
+            if f_settings.TeamCheck and ac._Category=="Player" then
+                local team=get_team(ac.Owner)
+                if team and my_team and team==my_team then is_teammate=true end
+            end
+            local color=colors_cache.enemy
+            local visible=false
+            if ac._Category=="Player" then
+                visible=is_teammate and f_settings.Teammates or (not is_teammate and f_settings.Players)
+                if is_teammate then color=colors_cache.team end
+            elseif ac._Category=="Zombie" then visible=f_settings.Zombies; color=colors_cache.zombie
+            else visible=f_settings.NPCs; color=colors_cache.npc end
+            render_esp(id, ac, color, visible, f_settings.MaxDistSqr, dist_sqr)
+        end
+
+        handled[id]=true
+
+        -- SA scan
+        if f_settings.SA and is_alive(ac) then
+            local is_enemy=true
+            if f_settings.TeamCheck and ac._Category=="Player" then
+                local team=get_team(ac.Owner)
+                if team and my_team and team==my_team then is_enemy=false end
+            end
+            if is_enemy and offset:Dot(lookDir)>0 and dist_sqr<2250000 then
+                local cache=ac._CachedParts
+                local part=(cache and cache[sa_targetName]) or (cache and cache.Head) or (cache and cache.Primary)
+                if part then
+                    local pos,onScreen=camera:WorldToViewportPoint(part.Position)
+                    if onScreen then
+                        local fovDist=(Vector2.new(pos.X,pos.Y)-sa_screenCenter).Magnitude^2
+                        if fovDist<sa_maxFOVSqr and fovDist<sa_minFOVDist and is_visible(part) then
+                            sa_minFOVDist=fovDist; sa_bestPart=part
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    CurrentSilentAimTarget=sa_bestPart
+
+    -- Cleanup stale ESP every 300 frames
+    if frame_id%300==0 then
+        for id in pairs(esp_objects) do if not handled[id] then remove_esp(id) end end
+        for model in pairs(part_cache) do if not model.Parent then part_cache[model]=nil end end
+    end
+end))
+
+-- ============================================================
+-- UI: COMBAT TAB
+-- ============================================================
+local CombatLeft = Tabs.Combat:AddLeftGroupbox("Silent Aim")
+
+CombatLeft:AddToggle("SilentAimEnabled", { Text = "Enable Silent Aim", Default = true })
+CombatLeft:AddToggle("ShowFOV", { Text = "Show FOV Circle", Default = true })
+CombatLeft:AddSlider("FOVRadius", { Text = "FOV Radius", Default = 400, Min = 0, Max = 1000, Rounding = 0 })
+CombatLeft:AddDropdown("TargetPart", { Text = "Target Part", Values = { "Head", "UpperTorso" }, Default = 1 })
+CombatLeft:AddToggle("WallCheck", { Text = "Wall Check", Default = true })
+CombatLeft:AddToggle("TeamCheck", { Text = "Team Check", Default = true })
+CombatLeft:AddToggle("Prediction", { Text = "Prediction", Default = true })
+CombatLeft:AddToggle("BulletDrop", { Text = "Bullet Drop Comp", Default = true })
+
+local HitboxToggle = CombatLeft:AddToggle("HitboxExpander", { Text = "Hitbox Expander", Default = false })
+local HitboxSize = CombatLeft:AddSlider("HitboxSize", { 
+    Text = "Size", 
+    Default = 4, 
+    Min = 2, 
+    Max = 20, 
+    Rounding = 0,
+    Dependency = HitboxToggle
+})
+
+local CombatRight = Tabs.Combat:AddRightGroupbox("Gun Mods")
+CombatRight:AddToggle("NoRecoil", { Text = "No Recoil", Default = false, Callback = function() 
+    if getgenv().cumyin_CurrentFirearm then ApplyGunMods(getgenv().cumyin_CurrentFirearm) end 
+end })
+CombatRight:AddToggle("NoSpread", { Text = "No Spread", Default = false, Callback = function() 
+    if getgenv().cumyin_CurrentFirearm then ApplyGunMods(getgenv().cumyin_CurrentFirearm) end 
+end })
+CombatRight:AddToggle("UnlockModes", { Text = "Unlock Fire Modes", Default = false, Callback = function() 
+    if getgenv().cumyin_CurrentFirearm then ApplyGunMods(getgenv().cumyin_CurrentFirearm) end 
+end })
+CombatRight:AddToggle("AutoReload", { Text = "Auto Reload", Default = false })
+
+local CustomRPMToggle = CombatRight:AddToggle("CustomRPM", { Text = "Custom RPM", Default = false, Callback = function() 
+    if getgenv().cumyin_CurrentFirearm then ApplyGunMods(getgenv().cumyin_CurrentFirearm) end 
+end })
+local RPMValue = CombatRight:AddSlider("RPMValue", { 
+    Text = "RPM Value", 
+    Default = 1000, 
+    Min = 100, 
+    Max = 10000, 
+    Rounding = 0, 
+    Callback = function() 
+        if getgenv().cumyin_CurrentFirearm then ApplyGunMods(getgenv().cumyin_CurrentFirearm) end 
+    end,
+    Dependency = CustomRPMToggle
+})
+
+-- ============================================================
+-- UI: ESP TAB
+-- ============================================================
+local ESPLeft = Tabs.ESP:AddLeftGroupbox("ESP Settings")
+ESPLeft:AddToggle("ESPEnabled", { Text = "Enable ESP", Default = true })
+ESPLeft:AddToggle("ShowPlayers", { Text = "Show Players", Default = true })
+ESPLeft:AddToggle("ShowNPCs", { Text = "Show NPCs", Default = true })
+ESPLeft:AddToggle("ShowZombies", { Text = "Show Zombies", Default = true })
+ESPLeft:AddToggle("ShowTeammates", { Text = "Show Teammates", Default = false })
+ESPLeft:AddSlider("MaxESPDistance", { Text = "Max Distance", Default = 2000, Min = 100, Max = 10000, Rounding = 0 })
+
+local ESPRight = Tabs.ESP:AddRightGroupbox("Colors")
+ESPRight:AddLabel("Enemy Color:"):AddColorPicker("EnemyColor", { Default = Color3.fromRGB(255, 0, 0) })
+ESPRight:AddLabel("Team Color:"):AddColorPicker("TeamColor", { Default = Color3.fromRGB(0, 255, 0) })
+ESPRight:AddLabel("Zombie Color:"):AddColorPicker("ZombieColor", { Default = Color3.fromRGB(255, 165, 0) })
+ESPRight:AddLabel("NPC Color:"):AddColorPicker("NPCColor", { Default = Color3.fromRGB(191, 191, 191) })
+
+-- ============================================================
+-- UI: CHARACTER TAB
+-- ============================================================
+local CharLeft = Tabs.Character:AddLeftGroupbox("Movement")
+
+local FlyToggle = CharLeft:AddToggle("CharFly", {
+    Text = "Fly",
+    Default = false,
+    Callback = function(v) CharSettings.FlyEnabled = v end,
+})
+FlyToggle:AddKeyPicker("FlyKey", { Default = "T", Mode = "Toggle", Text = "Fly Key" })
+Options.FlyKey:OnClick(function()
+    FlyToggle:SetValue(not FlyToggle.Value)
+end)
+
+
+-- Fly speed slider with dependency
+local FlySpeed = CharLeft:AddSlider("FlySpeed", { 
+    Text = "Fly Speed", 
+    Default = 50, 
+    Min = 10, 
+    Max = 500, 
+    Rounding = 0, 
+    Callback = function(v) CharSettings.FlySpeed = v end,
+    Dependency = FlyToggle
+})
+
+CharLeft:AddSlider("WalkSpeedMult", { Text = "Walk Speed Mult", Default = 1, Min = 1, Max = 100, Rounding = 1, Callback = function(v) CharSettings.WalkSpeedMult = v end })
+CharLeft:AddSlider("SprintSpeedMult", { Text = "Sprint Speed Mult", Default = 1, Min = 1, Max = 100, Rounding = 1, Callback = function(v) CharSettings.SprintSpeedMult = v end })
+CharLeft:AddToggle("InfStamina", { Text = "Infinite Stamina", Default = false, Callback = function(v) CharSettings.InfStamina = v end })
+
+local CharRight = Tabs.Character:AddRightGroupbox("Anti-Aim")
+CharRight:AddToggle("Spinbot", { Text = "Spinbot", Default = false, Callback = function(v) CharSettings.Spinbot = v end })
+CharRight:AddSlider("SpinSpeed", { Text = "Spin Speed", Default = 50, Min = 1, Max = 100, Rounding = 0, Callback = function(v) CharSettings.SpinSpeed = v end })
+
+-- ============================================================
+-- UI: VEHICLE TAB
+-- ============================================================
+local VehLeft = Tabs.Vehicle:AddLeftGroupbox("Turret Mods")
+VehLeft:AddToggle("VehNoSpread", { Text = "No Spread", Default = false, Callback = function(v) ActiveTurretMods.NoSpread = v; ApplyTurretMods() end })
+VehLeft:AddToggle("VehNoRecoil", { Text = "No Recoil", Default = false, Callback = function(v) ActiveTurretMods.NoRecoil = v; ApplyTurretMods() end })
+
+local VehRPMToggle = VehLeft:AddToggle("VehCustomRPM", { Text = "Custom RPM", Default = false, Callback = function(v) ActiveTurretMods.CustomRPM = v; ApplyTurretMods() end })
+local VehRPMValue = VehLeft:AddSlider("VehRPMValue", { 
+    Text = "RPM Value", 
+    Default = 1000, 
+    Min = 100, 
+    Max = 10000, 
+    Rounding = 0, 
+    Callback = function(v) ActiveTurretMods.RPMValue = v; ApplyTurretMods() end,
+    Dependency = VehRPMToggle
+})
+
+-- ============================================================
+-- UI: MISC TAB
+-- ============================================================
+local MiscLeft = Tabs.Misc:AddLeftGroupbox("World")
+MiscLeft:AddToggle("AlwaysDay", { Text = "Always Day", Default = false, Callback = function() update_lighting() end })
+MiscLeft:AddToggle("NoFog", { Text = "No Fog", Default = false, Callback = function() update_lighting() end })
+
+-- ============================================================
+-- UI: CONFIGS TAB
+-- ============================================================
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu")
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind", { Default = "RightShift", NoUI = true, Text = "Menu keybind" })
+MenuGroup:AddButton("Unload", function()
+    IsUnloading = true
+    for _, c in ipairs(connections) do if c.Disconnect then c:Disconnect() end end
+    for id in pairs(esp_objects) do remove_esp(id) end
+    for _, o in pairs(esp_pool) do if o.box then o.box:Destroy() end end
+    if getgenv().cumyin_FOV_UI then pcall(function() getgenv().cumyin_FOV_UI.Gui:Destroy() end) end
+    if getgenv().cumyin_OldGetMuzzle then
+        local FM = findModule("FirearmInventory")
+        if FM then pcall(function() require(FM).GetMuzzleCFrame = getgenv().cumyin_OldGetMuzzle end) end
+        getgenv().cumyin_OldGetMuzzle = nil
+    end
+    if getgenv().cumyin_OldEquip then
+        local FM = findModule("FirearmInventory")
+        if FM then pcall(function() require(FM).Equip = getgenv().cumyin_OldEquip end) end
+        getgenv().cumyin_OldEquip = nil
+    end
+    if getgenv().cumyin_OldCharUpdate then
+        local m = findModule("CharacterController")
+        if m then pcall(function() require(m).Update = getgenv().cumyin_OldCharUpdate end) end
+        getgenv().cumyin_OldCharUpdate = nil
+    end
+    Library:Unload()
+end)
+
+local WMToggle = MenuGroup:AddToggle("ShowWatermark", { Text = "Show Watermark", Default = true })
+WMToggle:OnChanged(function(v) Library:SetWatermarkVisibility(v) end)
+
+-- ============================================================
+-- SAVE / THEME
+-- ============================================================
+Library.ToggleKeybind = Options.MenuKeybind
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
+ThemeManager:SetFolder("cumyinBrm5")
+SaveManager:SetFolder("cumyinBrm5/configs")
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+SaveManager:LoadAutoloadConfig()
+
+Library:SetWatermarkVisibility(true)
+Library:SetWatermark("cumyin.pro | No Target")
+
+-- Watermark update
+task.spawn(function()
+    local FPS = 60
+    local fc = 0
+    local ft = tick()
+    while not IsUnloading do
+        fc = fc + 1
+        if (tick() - ft) >= 1 then 
+            FPS = fc
+            ft = tick()
+            fc = 0
+        end
+        local ping = math.floor(game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue())
+        if CurrentSilentAimTarget and CurrentSilentAimTarget.Parent then
+            local model = CurrentSilentAimTarget.Parent
+            local myChar = local_player.Character
+            local myRoot = myChar and (myChar:FindFirstChild("HumanoidRootPart") or myChar.PrimaryPart)
+            local hum = model:FindFirstChildOfClass("Humanoid")
+            local dist = myRoot and math.floor((myRoot.Position - CurrentSilentAimTarget.Position).Magnitude) or 0
+            local hp = hum and math.floor(hum.Health) or 0
+            Library:SetWatermark(("cumyin.pro | Target HP:%d | %dm | %dfps | %dms"):format(hp, dist, FPS, ping))
+        else
+            Library:SetWatermark(("cumyin.pro | No Target | %dfps | %dms"):format(FPS, ping))
+        end
+        task.wait(1)
+    end
+end)
+
+update_lighting()
+print("cumyin.pro BRM5 loaded")

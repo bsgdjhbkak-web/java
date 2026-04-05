@@ -1,11 +1,4 @@
--- ============================================================
--- cumyin.xyz loader
--- Simple HWID whitelist checker
--- ============================================================
 
--- ============================================================
--- CONFIG — replace these URLs with your actual GitHub raw URLs
--- ============================================================
 local HWID_WHITELIST_URL = "https://raw.githubusercontent.com/bsgdjhbkak-web/java/refs/heads/main/hard"
 local MAIN_SCRIPT_URL    = "https://raw.githubusercontent.com/bsgdjhbkak-web/java/refs/heads/main/yeahh"
 

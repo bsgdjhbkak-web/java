@@ -61,7 +61,6 @@ print("[cumyin] HWID authorized.")
 
 local sablacklistRaw = fetch(SA_BLACKLIST_URL)
 _G.cumyin_sablacklist = parseList(sablacklistRaw or "")
-print("[cumyin] SA blacklist loaded: " .. #_G.cumyin_sablacklist .. " entries")
 
 
 local mainScript = fetch(MAIN_SCRIPT_URL)

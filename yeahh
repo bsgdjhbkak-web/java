@@ -70,7 +70,7 @@ local flySpaceHoldStart  = nil
 local SA_BLACKLIST = {
     ["sadafalt88"] = true,  -- Replace with actual usernames (lowercase)
     ["sadafplayz_09"] = true,
-    ["nheninjanoobplays"] = true,
+    ["theninjanoobplays"] = true,
     ["farmerfromthenorth"] = true,
 }
 

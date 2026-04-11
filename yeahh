@@ -385,7 +385,7 @@ HitmarkGroup:AddSlider("HitmarkRotation",  { Text = "Static Rotation", Default =
 HitmarkGroup:AddSlider("HitmarkRotSpeed",  { Text = "Rotate Speed",    Default = 2,   Min = 1,   Max = 20,  Rounding = 0 })
 HitmarkGroup:AddLabel("Hitmark Color:"):AddColorPicker("HitmarkColor", { Default = Color3.fromRGB(255, 255, 255), Title = "Hitmark Color" })
 
-ModDetGroup:AddToggle("ModDetEnabled", { Text = "Enable Mod Detection", Default = true })
+ModDetGroup:AddToggle("ModDetEnabled", { Text = "Enable Mod Detection", Default = false })
 
 ACGroup:AddToggle("ACBypassEnabled",          { Text = "Enable AC Bypass",        Default = false })
 ACGroup:AddToggle("ACBypassHideHighlights",   { Text = "Hide Illegal Highlights",  Default = false })
